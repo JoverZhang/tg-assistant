@@ -83,7 +83,7 @@ func main() {
 	}
 
 	b.Handle("/hello", func(c tele.Context) error {
-		return c.Send("Hello!")
+		return c.Send(fmt.Sprintf("Hello! The ChatID is %d", c.Chat().ID))
 	})
 
 	// Handle incoming photos (v4: msg.Photo is *tele.Photo)
