@@ -10,11 +10,24 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Token    string
+	// MTProto credentials
+	SessionFile    string
+	APIID          int
+	APIHash        string
+	Phone          string
+	StorageChatID  int64
+
+	// Proxy settings
+	ProxyURL string // e.g., "socks5://127.0.0.1:1080" or "http://127.0.0.1:8080"
+
+	// File paths
 	LocalDir string
 	DoneDir  string
-	ChatID   int64
 	MaxSize  int64 // Maximum file size for video splitting in bytes (0 = no splitting)
+
+	// Legacy Bot API (deprecated, kept for backward compatibility)
+	Token  string
+	ChatID int64
 }
 
 // Parse parses command-line flags and returns a Config
@@ -22,11 +35,25 @@ func Parse() (*Config, error) {
 	cfg := &Config{}
 
 	var maxSizeStr string
-	flag.StringVar(&cfg.Token, "token", "", "Telegram bot token for authentication")
+
+	// MTProto flags
+	flag.StringVar(&cfg.SessionFile, "session-file", "./session.json", "Path to MTProto session file")
+	flag.IntVar(&cfg.APIID, "api-id", 0, "Telegram API ID (from https://my.telegram.org/apps)")
+	flag.StringVar(&cfg.APIHash, "api-hash", "", "Telegram API hash")
+	flag.StringVar(&cfg.Phone, "phone", "", "Phone number for authentication (e.g., +1234567890)")
+	flag.Int64Var(&cfg.StorageChatID, "storage-chat-id", 0, "Storage chat ID where files will be uploaded")
+
+	// Proxy flags
+	flag.StringVar(&cfg.ProxyURL, "proxy", "", "Proxy URL (e.g., socks5://127.0.0.1:1080 or http://127.0.0.1:8080)")
+
+	// File path flags
 	flag.StringVar(&cfg.LocalDir, "local-dir", "", "Source directory path containing files to upload")
 	flag.StringVar(&cfg.DoneDir, "done-dir", "", "Destination directory path for successfully uploaded files")
-	flag.Int64Var(&cfg.ChatID, "chat-id", 0, "Target Telegram chat ID where files will be sent")
 	flag.StringVar(&maxSizeStr, "max-size", "", "Maximum file size for video splitting (e.g., \"2G\", \"500M\", \"1.5G\")")
+
+	// Legacy Bot API flags (deprecated)
+	flag.StringVar(&cfg.Token, "token", "", "[DEPRECATED] Telegram bot token for authentication")
+	flag.Int64Var(&cfg.ChatID, "chat-id", 0, "[DEPRECATED] Target Telegram chat ID")
 
 	flag.Parse()
 
@@ -48,8 +75,17 @@ func Parse() (*Config, error) {
 
 // Validate checks if all required configuration fields are provided and valid
 func (c *Config) Validate() error {
-	if c.Token == "" {
-		return fmt.Errorf("token is required")
+	// Check for MTProto credentials
+	if c.APIID == 0 {
+		return fmt.Errorf("api-id is required (get from https://my.telegram.org/apps)")
+	}
+
+	if c.APIHash == "" {
+		return fmt.Errorf("api-hash is required (get from https://my.telegram.org/apps)")
+	}
+
+	if c.StorageChatID == 0 {
+		return fmt.Errorf("storage-chat-id is required")
 	}
 
 	if c.LocalDir == "" {
@@ -60,8 +96,11 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("done-dir is required")
 	}
 
-	if c.ChatID == 0 {
-		return fmt.Errorf("chat-id is required")
+	// Phone is optional if session file already exists
+	if c.Phone == "" {
+		if _, err := os.Stat(c.SessionFile); os.IsNotExist(err) {
+			return fmt.Errorf("phone is required for first-time authentication (session file not found)")
+		}
 	}
 
 	// Check if local directory exists

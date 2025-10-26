@@ -28,11 +28,18 @@ func main() {
 		log.Println("Please install ffprobe (usually bundled with ffmpeg).")
 	}
 
-	// Initialize Telegram uploader
-	uploader, err := telegram.NewUploader(cfg.Token)
+	// Initialize MTProto uploader
+	uploader, err := telegram.NewMTProtoClient(telegram.MTProtoConfig{
+		SessionFile: cfg.SessionFile,
+		APIID:       cfg.APIID,
+		APIHash:     cfg.APIHash,
+		Phone:       cfg.Phone,
+		ProxyURL:    cfg.ProxyURL,
+	})
 	if err != nil {
-		log.Fatalf("Failed to initialize Telegram uploader: %v", err)
+		log.Fatalf("Failed to initialize MTProto uploader: %v", err)
 	}
+	defer uploader.Close()
 
 	// Initialize file processor
 	processor := fileprocessor.NewProcessor(cfg.LocalDir, cfg.DoneDir)
@@ -82,7 +89,7 @@ func main() {
 		if isVideo {
 			// Video processing workflow
 			log.Printf("Processing video: %s", filename)
-			msgID, additionalFiles, err := fileprocessor.ProcessVideo(filePath, tag, description, cfg.MaxSize, uploader, cfg.ChatID)
+			msgID, additionalFiles, err := fileprocessor.ProcessVideo(filePath, tag, description, cfg.MaxSize, uploader, cfg.StorageChatID)
 			if err != nil {
 				fileprocessor.LogFileInfo(filename, fileInfo.Size(), false, err)
 				stats.Failed++
@@ -99,7 +106,7 @@ func main() {
 		} else {
 			// Non-video file processing
 			caption := fileprocessor.BuildCaption(tag, description)
-			msgID, err := uploader.SendMedia(cfg.ChatID, filePath, caption)
+			msgID, err := uploader.SendMedia(cfg.StorageChatID, filePath, caption)
 			if err != nil {
 				fileprocessor.LogFileInfo(filename, fileInfo.Size(), false, err)
 				stats.Failed++

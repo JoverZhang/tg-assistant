@@ -1,27 +1,115 @@
 # Telegram Uploader Specification
 
 ## Overview
-A write-only Telegram client that uploads files from a local directory to a specified Telegram chat, then moves processed files to a done directory.
+A write-only Telegram client that uploads files from a local directory to a storage chat using MTProto (user account), then moves processed files to a done directory. Uses MTProto to bypass the 50MB Bot API file size limit, supporting files up to 2GB.
 
 ## Technology Stack
-- **Library**: `gopkg.in/telebot.v4` (same as used in `cmd/server/main.go`)
+- **Library**: `github.com/gotd/td` (MTProto user client)
 - **Language**: Go
-- **Dependencies**: telebot.v4 for Telegram Bot API interaction
+- **Dependencies**:
+  - gotd/td for MTProto user client
+  - ffmpeg/ffprobe for video processing
+  - golang.org/x/image for image composition
 
 ## Requirements
 
 ### Command-Line Arguments
-The uploader requires four arguments:
-1. **-token** - Telegram bot token for authentication
-2. **-local-dir** - Source directory path containing files to upload
-3. **-done-dir** - Destination directory path for successfully uploaded files
-4. **-chat-id** - Target Telegram chat ID where files will be sent (int64)
-5. **-max-size** - Maximum file size for video splitting (e.g., "2G", "500M", "1.5G"). Optional, defaults to no splitting.
+The uploader requires the following arguments:
+1. **-session-file** - Path to MTProto session file (e.g., "./session.json"). Will be created on first run.
+2. **-api-id** - Telegram API ID (obtain from https://my.telegram.org/apps)
+3. **-api-hash** - Telegram API hash (obtain from https://my.telegram.org/apps)
+4. **-phone** - Phone number for authentication (e.g., "+1234567890"). Only needed on first run.
+5. **-local-dir** - Source directory path containing files to upload
+6. **-done-dir** - Destination directory path for successfully uploaded files
+7. **-storage-chat-id** - Storage chat ID where files will be uploaded (int64)
+8. **-max-size** - Maximum file size for video splitting (e.g., "2G", "500M", "1.5G"). Optional, defaults to no splitting.
+9. **-proxy** - Proxy server URL (e.g., "socks5://127.0.0.1:1080" or "http://127.0.0.1:8080"). Optional.
 
-Example usage:
+Example usage (first run with authentication):
 ```bash
-./uploader -token="YOUR_BOT_TOKEN" -local-dir="./uploads" -done-dir="./done" -chat-id=123456789 -max-size="2G"
+./uploader \
+  -session-file="./session.json" \
+  -api-id="12345" \
+  -api-hash="abcdef123456" \
+  -phone="+1234567890" \
+  -local-dir="./uploads" \
+  -done-dir="./done" \
+  -storage-chat-id=-100123456789 \
+  -max-size="2G"
 ```
+
+Example usage (subsequent runs, using saved session):
+```bash
+./uploader \
+  -session-file="./session.json" \
+  -api-id="12345" \
+  -api-hash="abcdef123456" \
+  -local-dir="./uploads" \
+  -done-dir="./done" \
+  -storage-chat-id=-100123456789 \
+  -max-size="2G"
+```
+
+Example usage (with SOCKS5 proxy):
+```bash
+./uploader \
+  -session-file="./session.json" \
+  -api-id="12345" \
+  -api-hash="abcdef123456" \
+  -local-dir="./uploads" \
+  -done-dir="./done" \
+  -storage-chat-id=-100123456789 \
+  -proxy="socks5://127.0.0.1:1080" \
+  -max-size="2G"
+```
+
+Example usage (with HTTP proxy):
+```bash
+./uploader \
+  -session-file="./session.json" \
+  -api-id="12345" \
+  -api-hash="abcdef123456" \
+  -local-dir="./uploads" \
+  -done-dir="./done" \
+  -storage-chat-id=-100123456789 \
+  -proxy="http://127.0.0.1:8080" \
+  -max-size="2G"
+```
+
+**Note**: On first run, the user will be prompted to enter the authentication code sent to their phone.
+
+### Prerequisites
+
+#### Telegram API Credentials
+To use MTProto, you need to obtain API credentials:
+1. Visit https://my.telegram.org/apps
+2. Log in with your phone number
+3. Create a new application
+4. Note down the `api_id` (integer) and `api_hash` (string)
+
+#### Storage Chat Setup
+Create a dedicated chat for file storage:
+- **Option 1: Private Channel** (Recommended)
+  - Create a private channel
+  - Add your user account as admin
+  - Get the channel ID (e.g., `-100123456789`)
+  - This chat will store all uploaded files
+
+- **Option 2: Private Group**
+  - Create a private group
+  - Add your user account
+  - Get the group ID
+
+- **Option 3: Saved Messages**
+  - Use your own "Saved Messages" chat
+  - Get your user ID as the chat ID
+
+**Note**: If using a bot for retrieval (see server component), the bot must also be added to this storage chat.
+
+#### Phone Number
+- A valid Telegram phone number registered to your account
+- Will receive authentication code on first run
+- Session is saved after authentication, no need to re-authenticate
 
 ### Core Functionality
 
@@ -45,7 +133,7 @@ Example usage:
      - Everything else → Document
    - Build caption: `#TAG DESCRIPTION` (replace underscores in DESCRIPTION with spaces)
    - **For video files**: Apply video processing workflow (see "Video Processing and Splitting" section)
-   - **For non-video files**: Upload directly to specified chat ID using telebot.v4
+   - **For non-video files**: Upload directly to storage chat using MTProto
    - On successful upload:
      - Get message ID from upload response
      - Rename file to include message ID: `originalname_msgid_<message_id>.ext`
@@ -80,9 +168,9 @@ Example usage:
 
 4. **Upload as Media Group/Album**:
    - Create media group with:
-     - **First item**: Preview photo (`tele.Photo`) with caption `#TAG DESCRIPTION` (this is the only caption for the entire album)
-     - **Remaining items**: Video chunks (`tele.Video`) with empty captions (Telegram only shows the first item's caption for the entire album)
-   - Use `bot.SendAlbum(recipient, album)` to send as single media group
+     - **First item**: Preview photo with caption `#TAG DESCRIPTION` (this is the only caption for the entire album)
+     - **Remaining items**: Video chunks with empty captions (Telegram only shows the first item's caption for the entire album)
+   - Use MTProto `messages.SendMultiMedia` to send as single media group
    - On successful upload:
      - Get message ID from first item in response
      - Rename and move files to done directory:
@@ -115,8 +203,9 @@ Example usage:
 #### Client Behavior
 - **Write-only**: Never receives or processes incoming messages
 - **Non-interactive**: Runs as a batch processor (one-shot execution)
-- **No polling**: Initialize bot without `Poller` (no need to call `Start()`)
-- Uses direct API calls via `bot.Send()` for single files or `bot.SendAlbum()` for media groups
+- **MTProto-based**: Uses user account authentication via gotd/td
+- **Session persistence**: Saves session to file after first authentication
+- Uses MTProto API calls via `messages.SendMedia` for single files or `messages.SendMultiMedia` for media groups
 
 ### Architecture
 
@@ -128,7 +217,8 @@ tg-assistant/
 │       └── main.go          # Entry point, CLI parsing, orchestration
 ├── internal/
 │   ├── telegram/
-│   │   └── uploader.go      # Telegram API client (upload operations)
+│   │   ├── uploader.go      # Legacy Bot API uploader (deprecated)
+│   │   └── mtproto.go       # MTProto user client (upload operations)
 │   ├── fileprocessor/
 │   │   └── processor.go     # File scanning, parsing, moving logic
 │   ├── video/
@@ -144,29 +234,34 @@ tg-assistant/
 #### Component Responsibilities
 
 ##### `cmd/uploader/main.go`
-- Parse command-line arguments
-- Validate inputs (paths exist, token format, etc.)
+- Parse command-line arguments (including MTProto credentials)
+- Validate inputs (paths exist, API credentials, etc.)
 - Initialize configuration
-- Create Telegram client and file processor
+- Create MTProto client and file processor
+- Handle first-time authentication (phone code verification)
 - Execute upload workflow
-- Handle graceful shutdown
+- Handle graceful shutdown and session saving
 
-##### `internal/telegram/uploader.go`
-- Initialize telebot.v4 Bot instance (without Poller)
-- Implement `SendMedia(chatID int64, filePath, caption string) (*tele.Message, error)` for single files
-- Implement `SendMediaGroup(chatID int64, items []MediaItem) ([]*tele.Message, error)` for albums
+##### `internal/telegram/mtproto.go`
+- Initialize gotd/td client with session management
+- Implement `NewMTProtoClient(sessionFile, apiID, apiHash, phone string) (*MTProtoClient, error)`
+  - Load existing session from file if available
+  - Otherwise, perform authentication flow (phone + code)
+  - Save session to file after successful authentication
+- Implement `SendMedia(chatID int64, filePath, caption string) (int, error)` for single files
+  - Returns message ID on success
+- Implement `SendMediaGroup(chatID int64, items []MediaItem) (int, error)` for albums
   - MediaItem contains: filePath, mediaType (photo/video), caption
-  - Build `tele.Album` from items
-  - Use `bot.SendAlbum(recipient, album)` to send as single media group
-  - Return array of message responses (first message contains primary message ID)
+  - Build InputMedia array from items
+  - Use `messages.SendMultiMedia` to send as single media group
+  - Return message ID from first item in response
 - Determine media type by file extension
-- Create appropriate media objects:
-  - `&tele.Photo{}` for image files
-  - `&tele.Video{}` for video files
-  - `&tele.Audio{}` for audio files
-  - `&tele.Document{}` for other files
-- Use `tele.FromDisk(filePath)` to load files
-- Handle API errors and rate limiting
+- Create appropriate InputMedia objects:
+  - `InputMediaUploadedPhoto` for image files
+  - `InputMediaUploadedDocument` for video/audio/document files
+- Upload file chunks for large files using `upload.SaveBigFilePart`
+- Handle MTProto errors and rate limiting
+- Implement session persistence (save/load from JSON file)
 
 ##### `internal/fileprocessor/processor.go`
 - Scan directory for files using `os.ReadDir()` (non-recursive)
@@ -196,7 +291,15 @@ tg-assistant/
 - Track statistics (processed, succeeded, failed)
 
 ##### `internal/config/config.go`
-- Define `Config` struct with fields: Token, LocalDir, DoneDir, ChatID, MaxSize (in bytes)
+- Define `Config` struct with fields:
+  - SessionFile: string (path to session file)
+  - APIID: int (Telegram API ID)
+  - APIHash: string (Telegram API hash)
+  - Phone: string (phone number for authentication)
+  - LocalDir: string (source directory)
+  - DoneDir: string (destination directory)
+  - StorageChatID: int64 (storage chat ID)
+  - MaxSize: int64 (maximum file size in bytes for splitting)
 - Implement validation methods
 - Parse command-line flags using `flag` package
 - Parse size string (e.g., "2G", "500M") to bytes
@@ -283,9 +386,18 @@ Media type is determined by file extension:
 
 ### Error Handling
 - Invalid filename format: Skip file and log warning
-- Upload failure: Log error with details (including Telegram error messages), do not move to done directory
+- Upload failure: Log error with details (including MTProto error messages), do not move to done directory
 - Missing directories: Create if possible, otherwise exit with error
-- Invalid token or chat ID: Exit with clear error message
+- Invalid API credentials: Exit with clear error message
+- Authentication errors:
+  - Invalid phone number: Exit with error
+  - Auth code timeout: Prompt user to retry
+  - Session file corrupted: Delete and re-authenticate
+  - Network errors during auth: Retry with backoff
+- Storage chat errors:
+  - Chat not found: Exit with error (user needs to check chat ID)
+  - No access to chat: Exit with error (user account must be member)
+  - Chat permissions insufficient: Exit with error
 - Video processing errors:
   - ffmpeg/ffprobe not available: Show warning at startup, fail gracefully on video files
   - Frame extraction failure: Log error with ffmpeg output, clean up temp files, skip file
@@ -293,6 +405,10 @@ Media type is determined by file extension:
   - Invalid preview dimensions: Automatically resize frames to ~320px width to avoid Telegram's dimension limits
   - Split failure: Log error with ffmpeg output, clean up temporary files, skip file
   - Media group exceeds 10 items: Log error, skip file (suggest larger max-size)
+- MTProto specific errors:
+  - FLOOD_WAIT: Respect rate limit, wait and retry
+  - FILE_PARTS_INVALID: Log error and skip file
+  - PEER_ID_INVALID: Check storage chat ID
 - Temporary file cleanup: Always clean up temp files on error or after successful upload
 
 ### Logging
@@ -300,21 +416,53 @@ Media type is determined by file extension:
 - Log errors with context
 - Track statistics (files processed, succeeded, failed)
 
-### Implementation Notes for telebot.v4
+### Implementation Notes for gotd/td (MTProto)
 
-#### Bot Initialization (Write-Only Mode)
+#### Client Initialization and Authentication
 ```go
-// No Poller needed for write-only client
-bot, err := tele.NewBot(tele.Settings{
-    Token: token,
-    // No Poller - we don't receive messages
+// Initialize client with session management
+client, err := telegram.NewMTProtoClient(telegram.MTProtoConfig{
+    SessionFile: "./session.json",
+    APIID:       12345,
+    APIHash:     "abcdef123456",
+    Phone:       "+1234567890",
 })
+if err != nil {
+    log.Fatal(err)
+}
+defer client.Close()
+
+// On first run, user will be prompted to enter auth code sent to phone
+// Session is saved to file for future runs
 ```
 
-#### Recipient for Sending
+#### Session Management
 ```go
-// Create recipient from chat ID
-recipient := &tele.Chat{ID: chatID}
+// Session structure (saved as JSON)
+type Session struct {
+    AuthKey []byte `json:"auth_key"`
+    Salt    int64  `json:"salt"`
+}
+
+// Load session from file
+func loadSession(path string) (*Session, error) {
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return nil, err
+    }
+    var s Session
+    err = json.Unmarshal(data, &s)
+    return &s, err
+}
+
+// Save session to file
+func saveSession(path string, s *Session) error {
+    data, err := json.Marshal(s)
+    if err != nil {
+        return err
+    }
+    return os.WriteFile(path, data, 0600)
+}
 ```
 
 #### Single File Upload Pattern
@@ -327,40 +475,16 @@ tag, description := parseFilename("travel_sunset_beach.jpg")
 caption := fmt.Sprintf("#%s %s", tag, strings.ReplaceAll(description, "_", " "))
 // caption = "#travel sunset beach"
 
-// Detect media type by extension
-ext := strings.ToLower(filepath.Ext(filePath))
-file := tele.FromDisk(filePath)
-
-// Send based on media type and capture response
-var msg *tele.Message
-var err error
-
-switch ext {
-case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
-    msg, err = bot.Send(recipient, &tele.Photo{
-        File:    file,
-        Caption: caption,
-    })
-case ".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv":
-    // Videos go through video processing workflow (see below)
-    // This is for non-video files only
-case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac":
-    msg, err = bot.Send(recipient, &tele.Audio{
-        File:    file,
-        Caption: caption,
-    })
-default:
-    msg, err = bot.Send(recipient, &tele.Document{
-        File:    file,
-        Caption: caption,
-    })
+// Upload using MTProto
+messageID, err := client.SendMedia(storageChatID, filePath, caption)
+if err != nil {
+    log.Printf("Upload failed: %v", err)
+    return
 }
 
-// On success, extract message ID for filename
-if err == nil && msg != nil {
-    messageID := msg.ID  // Use this to rename file
-    // Example: travel_sunset_beach.jpg → travel_sunset_beach_msgid_12345.jpg
-}
+// On success, rename and move file
+newName := fmt.Sprintf("%s_msgid_%d%s", baseFilename, messageID, ext)
+// Example: travel_sunset_beach.jpg → travel_sunset_beach_msgid_12345.jpg
 ```
 
 #### Video Upload with Preview and Splitting Pattern
@@ -391,39 +515,69 @@ if totalItems > 10 {
     // Clean up temp files and skip
 }
 
-// Step 4: Build media group
-album := tele.Album{}
-
-// First item: preview photo with caption (only caption for entire album)
-album = append(album, &tele.Photo{
-    File:    tele.FromDisk(previewPath),
-    Caption: baseCaption, // This caption applies to the entire album
-})
+// Step 4: Build media items
+mediaItems := []telegram.MediaItem{
+    // First item: preview photo with caption
+    {
+        FilePath:  previewPath,
+        MediaType: "photo",
+        Caption:   baseCaption, // This caption applies to the entire album
+    },
+}
 
 // Remaining items: video parts with empty captions
 for _, partPath := range videoParts {
-    album = append(album, &tele.Video{
-        File:    tele.FromDisk(partPath),
-        Caption: "", // Empty caption - Telegram only shows first item's caption
+    mediaItems = append(mediaItems, telegram.MediaItem{
+        FilePath:  partPath,
+        MediaType: "video",
+        Caption:   "", // Empty caption
     })
 }
 
-// Step 5: Send media group
-messages, err := bot.SendAlbum(recipient, album)
+// Step 5: Send media group using MTProto
+messageID, err := client.SendMediaGroup(storageChatID, mediaItems)
 if err != nil {
     // Clean up temp files and handle error
 }
 
-// Step 6: Extract message ID (from first message in group)
-messageID := messages[0].ID
-
-// Step 7: Move files to done directory with message ID
+// Step 6: Move files to done directory with message ID
 // - Original video: tutorial_golang_basics_msgid_12345.mp4
 // - Preview: tutorial_golang_basics_preview_msgid_12345.jpg
 // - Parts (optional): tutorial_golang_basics_part1_msgid_12345.mp4, part2, etc.
 
-// Step 8: Clean up temp directory
+// Step 7: Clean up temp directory
 os.RemoveAll(tempDir)
+```
+
+#### MTProto Large File Upload Pattern
+```go
+// For files > 10MB, use upload.SaveBigFilePart
+// gotd/td handles this automatically in uploader.Upload()
+
+func (c *MTProtoClient) uploadFile(filePath string) (*tg.InputFile, error) {
+    f, err := os.Open(filePath)
+    if err != nil {
+        return nil, err
+    }
+    defer f.Close()
+
+    stat, err := f.Stat()
+    if err != nil {
+        return nil, err
+    }
+
+    // Use uploader from gotd/td
+    u := uploader.NewUploader(c.api)
+
+    // Upload returns InputFile that can be used in messages.SendMedia
+    inputFile, err := u.Upload(context.Background(), uploader.NewUpload(
+        filepath.Base(filePath),
+        f,
+        stat.Size(),
+    ))
+
+    return inputFile, err
+}
 ```
 
 #### ffmpeg Commands Reference
@@ -453,7 +607,10 @@ ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:no
 ```
 
 ### Dependencies
-- **telebot.v4**: Telegram Bot API library (`gopkg.in/telebot.v4`)
+- **gotd/td**: Telegram MTProto client library (`github.com/gotd/td`)
+  - Core client: `github.com/gotd/td/telegram`
+  - File uploads: `github.com/gotd/td/telegram/uploader`
+  - TL types: `github.com/gotd/td/tg`
 - **golang.org/x/image**: Extended image processing library for high-quality image scaling
   - Used for resizing video frames before composing preview grid
   - Provides bilinear interpolation for smooth thumbnail scaling
@@ -469,6 +626,8 @@ ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:no
   - `os/exec`: Execute ffmpeg commands
   - `fmt`, `strings`, `strconv`: String formatting and parsing
   - `math`: Mathematical operations (e.g., chunk count calculation)
+  - `encoding/json`: Session persistence
+  - `context`: Context management for MTProto operations
 
 ### Future Enhancements (Optional)
 - Watch mode: Monitor directory continuously for new files
