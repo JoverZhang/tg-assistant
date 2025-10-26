@@ -8,6 +8,13 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+// MediaItem represents a media item for group upload
+type MediaItem struct {
+	FilePath  string
+	MediaType string // "photo" or "video"
+	Caption   string
+}
+
 // Uploader handles Telegram file uploads
 type Uploader struct {
 	bot *tele.Bot
@@ -68,4 +75,50 @@ func (u *Uploader) SendMedia(chatID int64, filePath, caption string) (int, error
 	}
 
 	return msg.ID, nil
+}
+
+// SendMediaGroup uploads multiple media items as an album/media group
+// Returns the message ID from the first message in the group
+func (u *Uploader) SendMediaGroup(chatID int64, items []MediaItem) (int, error) {
+	if len(items) == 0 {
+		return 0, fmt.Errorf("no media items provided")
+	}
+
+	if len(items) > 10 {
+		return 0, fmt.Errorf("too many media items: %d (Telegram limit is 10)", len(items))
+	}
+
+	recipient := &tele.Chat{ID: chatID}
+	album := tele.Album{}
+
+	for i, item := range items {
+		file := tele.FromDisk(item.FilePath)
+
+		switch item.MediaType {
+		case "photo":
+			album = append(album, &tele.Photo{
+				File:    file,
+				Caption: item.Caption,
+			})
+		case "video":
+			album = append(album, &tele.Video{
+				File:    file,
+				Caption: item.Caption,
+			})
+		default:
+			return 0, fmt.Errorf("unsupported media type for item %d: %s (use 'photo' or 'video')", i, item.MediaType)
+		}
+	}
+
+	messages, err := u.bot.SendAlbum(recipient, album)
+	if err != nil {
+		return 0, fmt.Errorf("failed to send media group: %w", err)
+	}
+
+	if len(messages) == 0 {
+		return 0, fmt.Errorf("received empty message response")
+	}
+
+	// Return the message ID from the first message in the group
+	return messages[0].ID, nil
 }

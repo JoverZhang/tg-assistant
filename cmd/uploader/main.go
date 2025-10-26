@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 
 	"tg-storage-assistant/internal/config"
 	"tg-storage-assistant/internal/fileprocessor"
@@ -15,6 +16,16 @@ func main() {
 	cfg, err := config.Parse()
 	if err != nil {
 		log.Fatalf("Configuration error: %v", err)
+	}
+
+	// Check if ffmpeg and ffprobe are available (required for video processing)
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		log.Println("WARNING: ffmpeg not found in PATH. Video processing will fail.")
+		log.Println("Please install ffmpeg to enable video processing features.")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		log.Println("WARNING: ffprobe not found in PATH. Video processing will fail.")
+		log.Println("Please install ffprobe (usually bundled with ffmpeg).")
 	}
 
 	// Initialize Telegram uploader
@@ -52,9 +63,6 @@ func main() {
 			continue
 		}
 
-		// Build caption
-		caption := fileprocessor.BuildCaption(tag, description)
-
 		// Get full file path
 		filePath := processor.GetFilePath(filename)
 
@@ -66,19 +74,45 @@ func main() {
 			continue
 		}
 
-		// Upload file
-		messageID, err := uploader.SendMedia(cfg.ChatID, filePath, caption)
-		if err != nil {
-			fileprocessor.LogFileInfo(filename, fileInfo.Size(), false, err)
-			stats.Failed++
-			continue
-		}
+		// Check if file is a video
+		isVideo := fileprocessor.IsVideoFile(filename)
 
-		// Move file to done directory with message ID in filename
-		if err := processor.MoveFile(filename, messageID); err != nil {
-			log.Printf("WARNING: Uploaded %s (msg ID: %d) but failed to move file - %v", filename, messageID, err)
-			stats.Failed++
-			continue
+		var messageID int
+
+		if isVideo {
+			// Video processing workflow
+			log.Printf("Processing video: %s", filename)
+			msgID, additionalFiles, err := fileprocessor.ProcessVideo(filePath, tag, description, cfg.MaxSize, uploader, cfg.ChatID)
+			if err != nil {
+				fileprocessor.LogFileInfo(filename, fileInfo.Size(), false, err)
+				stats.Failed++
+				continue
+			}
+			messageID = msgID
+
+			// Move video and additional files to done directory
+			if err := processor.MoveVideoFiles(filename, messageID, additionalFiles); err != nil {
+				log.Printf("WARNING: Uploaded %s (msg ID: %d) but failed to move files - %v", filename, messageID, err)
+				stats.Failed++
+				continue
+			}
+		} else {
+			// Non-video file processing
+			caption := fileprocessor.BuildCaption(tag, description)
+			msgID, err := uploader.SendMedia(cfg.ChatID, filePath, caption)
+			if err != nil {
+				fileprocessor.LogFileInfo(filename, fileInfo.Size(), false, err)
+				stats.Failed++
+				continue
+			}
+			messageID = msgID
+
+			// Move file to done directory with message ID in filename
+			if err := processor.MoveFile(filename, messageID); err != nil {
+				log.Printf("WARNING: Uploaded %s (msg ID: %d) but failed to move file - %v", filename, messageID, err)
+				stats.Failed++
+				continue
+			}
 		}
 
 		fileprocessor.LogFileInfo(filename, fileInfo.Size(), true, nil)
