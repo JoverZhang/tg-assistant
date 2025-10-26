@@ -30,7 +30,7 @@ func SplitVideo(videoPath string, maxSize int64, outputDir string) ([]string, er
 	}
 
 	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -43,25 +43,33 @@ func SplitVideo(videoPath string, maxSize int64, outputDir string) ([]string, er
 	baseName = baseName[:len(baseName)-len(ext)]
 	outputPattern := filepath.Join(outputDir, fmt.Sprintf("%s_part%%03d%s", baseName, ext))
 
-	// Split video using ffmpeg
-	// Use segment muxer with segment_size to split by size
+	// Get video duration to calculate split times
+	duration, err := getVideoDuration(videoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get video duration: %w", err)
+	}
+
+	// Get video bitrate to estimate duration per chunk
+	bitrate := float64(fileSize) / duration     // bytes per second
+	chunkDuration := float64(maxSize) / bitrate // seconds per chunk
+
+	// Split video using ffmpeg by time segments
+	// This is more reliable than segment_size
 	cmd := exec.Command("ffmpeg",
 		"-i", videoPath,
 		"-c", "copy", // Copy codec (no re-encoding)
 		"-map", "0", // Map all streams
 		"-f", "segment",
-		"-segment_size", fmt.Sprintf("%d", maxSize),
+		"-segment_time", fmt.Sprintf("%.2f", chunkDuration),
 		"-reset_timestamps", "1",
 		"-y", // Overwrite output files
 		outputPattern,
 	)
 
-	// Suppress ffmpeg output
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("ffmpeg split command failed: %w", err)
+	// Capture stderr for error messages
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg split command failed: %w\nOutput: %s", err, string(output))
 	}
 
 	// Collect generated chunk paths

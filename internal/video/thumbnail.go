@@ -3,13 +3,15 @@ package video
 import (
 	"fmt"
 	"image"
-	"image/draw"
+	stddraw "image/draw"
 	"image/jpeg"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"golang.org/x/image/draw"
 )
 
 // ExtractFrames extracts N frames evenly distributed from a video
@@ -94,18 +96,30 @@ func ComposeGrid(framePaths []string, cols, rows int, outputPath string) error {
 			len(framePaths), expectedFrames, cols, rows)
 	}
 
-	// Load first frame to get dimensions
+	// Load first frame to get original dimensions
 	firstFrame, err := loadImage(framePaths[0])
 	if err != nil {
 		return fmt.Errorf("failed to load first frame: %w", err)
 	}
-	frameBounds := firstFrame.Bounds()
-	frameWidth := frameBounds.Dx()
-	frameHeight := frameBounds.Dy()
+	originalBounds := firstFrame.Bounds()
+	originalWidth := originalBounds.Dx()
+	originalHeight := originalBounds.Dy()
+
+	// Calculate thumbnail size for each frame
+	// Target: final grid should be around 1920-2560 pixels wide (suitable for Telegram)
+	// With 6 columns, each thumbnail should be ~320 pixels wide
+	thumbnailWidth := 320
+	thumbnailHeight := thumbnailWidth * originalHeight / originalWidth
+
+	// Ensure minimum size
+	if thumbnailHeight < 180 {
+		thumbnailHeight = 180
+		thumbnailWidth = thumbnailHeight * originalWidth / originalHeight
+	}
 
 	// Create output image
-	gridWidth := frameWidth * cols
-	gridHeight := frameHeight * rows
+	gridWidth := thumbnailWidth * cols
+	gridHeight := thumbnailHeight * rows
 	grid := image.NewRGBA(image.Rect(0, 0, gridWidth, gridHeight))
 
 	// Draw frames onto grid
@@ -118,12 +132,14 @@ func ComposeGrid(framePaths []string, cols, rows int, outputPath string) error {
 		// Calculate position in grid
 		col := i % cols
 		row := i / cols
-		x := col * frameWidth
-		y := row * frameHeight
+		x := col * thumbnailWidth
+		y := row * thumbnailHeight
 
-		// Draw frame at position
-		destRect := image.Rect(x, y, x+frameWidth, y+frameHeight)
-		draw.Draw(grid, destRect, frame, frameBounds.Min, draw.Src)
+		// Create thumbnail rectangle
+		thumbRect := image.Rect(x, y, x+thumbnailWidth, y+thumbnailHeight)
+
+		// Resize and draw frame at position using bilinear interpolation
+		draw.BiLinear.Scale(grid, thumbRect, frame, frame.Bounds(), stddraw.Over, nil)
 	}
 
 	// Save grid as JPEG
