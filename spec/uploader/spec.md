@@ -204,25 +204,34 @@ tg-assistant/
 ##### `internal/video/thumbnail.go`
 - Extract N frames evenly distributed from video using ffmpeg
 - Implementation: `ExtractFrames(videoPath string, count int, outputDir string) ([]string, error)`
+  - Get video duration using ffprobe
   - Calculate timestamps: for 30 frames in 60s video → extract at 0s, 2s, 4s, ..., 58s
-  - Use ffmpeg command: `ffmpeg -i input.mp4 -vf "select='eq(n\,FRAME_NUMBER)'" -vframes 1 frame_%03d.jpg`
+  - Use ffmpeg command: `ffmpeg -ss <timestamp> -i input.mp4 -vframes 1 -q:v 2 frame_%03d.jpg`
   - Return paths to extracted frame images
 - Compose frames into grid: `ComposeGrid(framePaths []string, cols, rows int, outputPath string) error`
-  - Use Go image libraries (`image`, `image/jpeg`, `image/draw`)
+  - Use Go image libraries (`image`, `image/jpeg`, `image/draw`, `golang.org/x/image/draw`)
+  - Load each frame and resize to thumbnail size (~320px width to avoid exceeding Telegram's dimension limits)
   - Arrange 30 frames in 6×5 grid (6 columns, 5 rows)
+  - Final grid dimensions: ~1920×900 pixels (suitable for Telegram)
+  - Use bilinear interpolation for smooth scaling
   - Save as JPEG with reasonable quality (e.g., 85%)
+- Helper: `getVideoDuration(videoPath string) (float64, error)` - Gets video duration using ffprobe
 - Clean up temporary frame files after grid composition
 
 ##### `internal/video/splitter.go`
 - Check video file size and split if needed
 - Implementation: `SplitVideo(videoPath string, maxSize int64, outputDir string) ([]string, error)`
-  - Calculate chunk size and count
-  - Use ffmpeg to split video by size:
-    - `ffmpeg -i input.mp4 -c copy -f segment -segment_time_delta 0.1 -segment_size <maxSize> output_part%03d.mp4`
-  - Alternative: Split by duration for more precise control
+  - Get file size and check if splitting is needed
+  - If file ≤ maxSize or maxSize not specified, return original video path
+  - Get video duration using `getVideoDuration()` (from thumbnail.go)
+  - Calculate bitrate: `bitrate = fileSize / duration` (bytes per second)
+  - Calculate chunk duration: `chunkDuration = maxSize / bitrate` (seconds per chunk)
+  - Split by time segments using ffmpeg (more reliable than byte-based splitting):
+    - `ffmpeg -i input.mp4 -c copy -map 0 -f segment -segment_time <chunkDuration> -reset_timestamps 1 output_part%03d.mp4`
+  - Capture ffmpeg output for error debugging
   - Return paths to split video files (or single original if no split needed)
-- Validate chunk count doesn't exceed Telegram limits (preview + chunks ≤ 10)
-- Handle cleanup of temporary split files on error
+- Helper: `ValidateChunkCount(numVideoParts int) error` - Validates chunk count doesn't exceed Telegram limits (preview + chunks ≤ 10)
+- Helper: `CleanupTempFiles(paths []string) error` - Handles cleanup of temporary split files on error
 
 ### File Format Parsing
 
@@ -274,13 +283,15 @@ Media type is determined by file extension:
 
 ### Error Handling
 - Invalid filename format: Skip file and log warning
-- Upload failure: Log error, optionally retry, do not move to done directory
+- Upload failure: Log error with details (including Telegram error messages), do not move to done directory
 - Missing directories: Create if possible, otherwise exit with error
 - Invalid token or chat ID: Exit with clear error message
 - Video processing errors:
-  - ffmpeg not available: Exit with error message (require ffmpeg in PATH)
-  - Frame extraction failure: Log error, skip file
-  - Split failure: Log error, clean up temporary files, skip file
+  - ffmpeg/ffprobe not available: Show warning at startup, fail gracefully on video files
+  - Frame extraction failure: Log error with ffmpeg output, clean up temp files, skip file
+  - Preview composition failure: Log error, clean up temp files, skip file
+  - Invalid preview dimensions: Automatically resize frames to ~320px width to avoid Telegram's dimension limits
+  - Split failure: Log error with ffmpeg output, clean up temporary files, skip file
   - Media group exceeds 10 items: Log error, skip file (suggest larger max-size)
 - Temporary file cleanup: Always clean up temp files on error or after successful upload
 
@@ -443,6 +454,9 @@ ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:no
 
 ### Dependencies
 - **telebot.v4**: Telegram Bot API library (`gopkg.in/telebot.v4`)
+- **golang.org/x/image**: Extended image processing library for high-quality image scaling
+  - Used for resizing video frames before composing preview grid
+  - Provides bilinear interpolation for smooth thumbnail scaling
 - **ffmpeg**: Required for video processing (frame extraction and splitting)
   - Must be available in system PATH
   - Check on startup: `exec.LookPath("ffmpeg")`
@@ -453,7 +467,8 @@ ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:no
   - `os`, `path/filepath`: File operations
   - `image`, `image/jpeg`, `image/draw`: Image composition for grid
   - `os/exec`: Execute ffmpeg commands
-  - `fmt`, `strings`: String formatting
+  - `fmt`, `strings`, `strconv`: String formatting and parsing
+  - `math`: Mathematical operations (e.g., chunk count calculation)
 
 ### Future Enhancements (Optional)
 - Watch mode: Monitor directory continuously for new files
