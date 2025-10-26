@@ -28,3 +28,7 @@ run-test-uploader:
 		--chat-id="$(CHAT_ID)" \
 		--max-size="500KB"
 
+build-uploader:
+	@echo "Building uploader binary..."
+	go build -o ./bin/uploader ./cmd/uploader
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ./bin/uploader.exe ./cmd/uploader
