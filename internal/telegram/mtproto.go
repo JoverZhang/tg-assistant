@@ -175,11 +175,11 @@ func (c *MTProtoClient) SendMedia(chatID int64, filePath, caption string) (int, 
 	}
 	defer file.Close()
 
-	// Upload file using uploader
+	// Upload file
 	u := uploader.NewUploader(c.api)
-	upload, err := u.FromReader(c.ctx, filepath.Base(filePath), file)
+	upload, err := u.FromPath(c.ctx, filePath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to upload file: %w", err)
+		return 0, fmt.Errorf("upload %q: %w", filePath, err)
 	}
 
 	// Determine media type and send
@@ -187,7 +187,7 @@ func (c *MTProtoClient) SendMedia(chatID int64, filePath, caption string) (int, 
 	var inputMedia tg.InputMediaClass
 
 	if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" || ext == ".bmp" {
-		// For photos, use InputMediaUploadedPhoto directly
+		// For photos, use InputMediaUploadedPhoto to show preview
 		inputMedia = &tg.InputMediaUploadedPhoto{
 			File: upload,
 		}
@@ -261,29 +261,29 @@ func (c *MTProtoClient) SendMediaGroup(chatID int64, items []MediaItem) (int, er
 		if err != nil {
 			return 0, fmt.Errorf("failed to open file %s: %w", item.FilePath, err)
 		}
+		file.Close()
 
 		// Upload file
 		u := uploader.NewUploader(c.api)
-		upload, err := u.FromReader(c.ctx, filepath.Base(item.FilePath), file)
-		file.Close()
-
+		upload, err := u.FromPath(c.ctx, item.FilePath)
 		if err != nil {
 			return 0, fmt.Errorf("failed to upload file %s: %w", item.FilePath, err)
 		}
 
 		// Create appropriate InputMedia based on type
 		var inputMedia tg.InputMediaClass
+		ext := strings.ToLower(filepath.Ext(item.FilePath))
+
+		println("=== SendMediaGroup item:", item.FilePath, "type:", item.MediaType)
+		println("--- upload:", upload.String())
 
 		if item.MediaType == "photo" {
-			// For photos, use InputMediaUploadedPhoto directly
+			// For photos in media group, use InputMediaUploadedPhoto
 			inputMedia = &tg.InputMediaUploadedPhoto{
 				File: upload,
 			}
 		} else {
-			// video or other types
-			ext := strings.ToLower(filepath.Ext(item.FilePath))
-
-			// For videos, add video attribute
+			// For videos and other types, use InputMediaUploadedDocument
 			attributes := []tg.DocumentAttributeClass{
 				&tg.DocumentAttributeFilename{
 					FileName: filepath.Base(item.FilePath),
@@ -291,7 +291,7 @@ func (c *MTProtoClient) SendMediaGroup(chatID int64, items []MediaItem) (int, er
 			}
 
 			// Add video attribute for video files
-			if isVideoExtension(ext) {
+			if item.MediaType == "video" || isVideoExtension(ext) {
 				attributes = append(attributes, &tg.DocumentAttributeVideo{
 					Duration: 0, // Unknown duration is fine
 					W:        0, // Unknown width/height is fine
@@ -422,21 +422,31 @@ func extractMessageID(updates tg.UpdatesClass) int {
 // Helper: Get MIME type from extension
 func getMimeType(ext string) string {
 	mimeTypes := map[string]string{
+		// Images
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".png":  "image/png",
+		".gif":  "image/gif",
+		".webp": "image/webp",
+		".bmp":  "image/bmp",
+		// Videos
 		".mp4":  "video/mp4",
 		".avi":  "video/x-msvideo",
 		".mov":  "video/quicktime",
 		".mkv":  "video/x-matroska",
 		".webm": "video/webm",
 		".flv":  "video/x-flv",
+		// Audio
 		".mp3":  "audio/mpeg",
 		".wav":  "audio/wav",
 		".ogg":  "audio/ogg",
 		".m4a":  "audio/mp4",
 		".flac": "audio/flac",
 		".aac":  "audio/aac",
-		".pdf":  "application/pdf",
-		".zip":  "application/zip",
-		".txt":  "text/plain",
+		// Documents
+		".pdf": "application/pdf",
+		".zip": "application/zip",
+		".txt": "text/plain",
 	}
 
 	if mime, ok := mimeTypes[ext]; ok {
