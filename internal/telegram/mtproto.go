@@ -16,6 +16,7 @@ import (
 	"github.com/gotd/td/telegram/dcs"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
+	"go.uber.org/zap"
 	"golang.org/x/net/proxy"
 )
 
@@ -49,6 +50,7 @@ func NewMTProtoClient(cfg MTProtoConfig) (*MTProtoClient, error) {
 	// Build client options
 	options := telegram.Options{
 		SessionStorage: sessionStorage,
+		Logger:         zap.L(),
 	}
 
 	// Configure proxy if provided
@@ -252,78 +254,28 @@ func (c *MTProtoClient) SendMediaGroup(chatID int64, items []MediaItem) (int, er
 		return 0, fmt.Errorf("too many media items: %d (Telegram limit is 10)", len(items))
 	}
 
-	// Build multi-media array
-	var multiMedia []tg.InputSingleMedia
-
-	for i, item := range items {
-		// Open and upload file
-		file, err := os.Open(item.FilePath)
-		if err != nil {
-			return 0, fmt.Errorf("failed to open file %s: %w", item.FilePath, err)
-		}
-		file.Close()
-
-		// Upload file
-		u := uploader.NewUploader(c.api)
-		upload, err := u.FromPath(c.ctx, item.FilePath)
-		if err != nil {
-			return 0, fmt.Errorf("failed to upload file %s: %w", item.FilePath, err)
-		}
-
-		// Create appropriate InputMedia based on type
-		var inputMedia tg.InputMediaClass
-		ext := strings.ToLower(filepath.Ext(item.FilePath))
-
-		println("=== SendMediaGroup item:", item.FilePath, "type:", item.MediaType)
-		println("--- upload:", upload.String())
-
-		if item.MediaType == "photo" {
-			// For photos in media group, use InputMediaUploadedPhoto
-			inputMedia = &tg.InputMediaUploadedPhoto{
-				File: upload,
-			}
-		} else {
-			// For videos and other types, use InputMediaUploadedDocument
-			attributes := []tg.DocumentAttributeClass{
-				&tg.DocumentAttributeFilename{
-					FileName: filepath.Base(item.FilePath),
-				},
-			}
-
-			// Add video attribute for video files
-			if item.MediaType == "video" || isVideoExtension(ext) {
-				attributes = append(attributes, &tg.DocumentAttributeVideo{
-					Duration: 0, // Unknown duration is fine
-					W:        0, // Unknown width/height is fine
-					H:        0,
-				})
-			}
-
-			inputMedia = &tg.InputMediaUploadedDocument{
-				File:       upload,
-				MimeType:   getMimeType(ext),
-				Attributes: attributes,
-			}
-		}
-
-		// Add to multi-media array
-		// Only first item gets caption
-		caption := ""
-		if i == 0 {
-			caption = item.Caption
-		}
-
-		multiMedia = append(multiMedia, tg.InputSingleMedia{
-			Media:    inputMedia,
-			Message:  caption,
-			RandomID: generateRandomID(),
-		})
-	}
-
-	// Convert chatID to proper peer
 	peer, err := c.resolvePeer(chatID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to resolve peer: %w", err)
+	}
+
+	up := uploader.NewUploader(c.api).WithPartSize(512 * 1024)
+
+	multiMedia := []tg.InputSingleMedia{}
+	for _, item := range items {
+		inputFile, err := up.FromPath(c.ctx, item.FilePath)
+		if err != nil {
+			return 0, fmt.Errorf("upload photo1: %w", err)
+		}
+
+		switch item.MediaType {
+		case "photo":
+			multiMedia = append(multiMedia, c.buildPhotoMedia(inputFile, item.Caption))
+		case "video":
+			multiMedia = append(multiMedia, c.buildVideoMedia(inputFile, item.Caption))
+		default:
+			return 0, fmt.Errorf("unsupported media type: %s", item.MediaType)
+		}
 	}
 
 	// Send multi-media
@@ -342,6 +294,66 @@ func (c *MTProtoClient) SendMediaGroup(chatID int64, items []MediaItem) (int, er
 	}
 
 	return msgID, nil
+}
+
+func (c *MTProtoClient) buildPhotoMedia(inputFile tg.InputFileClass, caption string) tg.InputSingleMedia {
+	media, err := c.api.MessagesUploadMedia(c.ctx, &tg.MessagesUploadMediaRequest{
+		Peer:  &tg.InputPeerSelf{},
+		Media: &tg.InputMediaUploadedPhoto{File: inputFile},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return tg.InputSingleMedia{
+		Media: &tg.InputMediaPhoto{ID: &tg.InputPhoto{
+			ID:            media.(*tg.MessageMediaPhoto).Photo.(*tg.Photo).GetID(),
+			AccessHash:    media.(*tg.MessageMediaPhoto).Photo.(*tg.Photo).GetAccessHash(),
+			FileReference: media.(*tg.MessageMediaPhoto).Photo.(*tg.Photo).GetFileReference(),
+		}},
+		RandomID: generateRandomID(),
+		Message:  caption,
+	}
+}
+
+func (c *MTProtoClient) buildVideoMedia(inputFile tg.InputFileClass, caption string) tg.InputSingleMedia {
+	fileName := func() string {
+		switch v := inputFile.(type) {
+		case *tg.InputFile:
+			return filepath.Base(v.Name)
+		case *tg.InputFileBig:
+			return filepath.Base(v.Name)
+		default:
+			return "Unknown"
+		}
+	}()
+
+	attrs := []tg.DocumentAttributeClass{
+		&tg.DocumentAttributeVideo{SupportsStreaming: true},
+		&tg.DocumentAttributeFilename{FileName: fileName},
+	}
+	media, err := c.api.MessagesUploadMedia(c.ctx, &tg.MessagesUploadMediaRequest{
+		Peer: &tg.InputPeerSelf{},
+		Media: &tg.InputMediaUploadedDocument{
+			File:       inputFile,
+			MimeType:   getMimeType(filepath.Ext(fileName)),
+			Attributes: attrs,
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return tg.InputSingleMedia{
+		Media: &tg.InputMediaDocument{
+			ID: &tg.InputDocument{
+				ID:            media.(*tg.MessageMediaDocument).Document.(*tg.Document).GetID(),
+				AccessHash:    media.(*tg.MessageMediaDocument).Document.(*tg.Document).GetAccessHash(),
+				FileReference: media.(*tg.MessageMediaDocument).Document.(*tg.Document).GetFileReference(),
+			},
+		},
+		RandomID: generateRandomID(),
+		Message:  caption,
+	}
 }
 
 // Close gracefully closes the MTProto client

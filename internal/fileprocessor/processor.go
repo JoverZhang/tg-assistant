@@ -169,7 +169,9 @@ func IsVideoFile(filename string) bool {
 
 // ProcessVideo handles video processing workflow: preview generation, splitting, and upload
 // Returns message ID and error
-func ProcessVideo(filePath, tag, description string, maxSize int64, uploader interface{ SendMediaGroup(int64, []telegram.MediaItem) (int, error) }, chatID int64) (int, []string, error) {
+func ProcessVideo(filePath, tag, description string, maxSize int64, uploader interface {
+	SendMediaGroup(int64, []telegram.MediaItem) (int, error)
+}, chatID int64) (int, []string, error) {
 	// Create temporary directory for video processing
 	tempDir := filepath.Join(os.TempDir(), "uploader_video_processing")
 	if err := os.MkdirAll(tempDir, 0755); err != nil {

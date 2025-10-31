@@ -100,7 +100,12 @@ func TestUpload(t *testing.T) {
 			{
 				FilePath:  previewPath,
 				MediaType: "photo",
-				Caption:   "#test Media group upload test (1 photo + 2 videos)",
+				Caption:   "#test Media group upload test (1 photo + 2 videos) ---",
+			},
+			{
+				FilePath:  previewPath,
+				MediaType: "photo",
+				Caption:   "#test Media group upload test (1 photo + 2 videos) ===",
 			},
 			{
 				FilePath:  videoPart1,
