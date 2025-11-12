@@ -43,23 +43,28 @@ func main() {
 		log.Println("Please install ffprobe (usually bundled with ffmpeg).")
 	}
 
-	// Network settings
-	dial, err := dialer.CreateProxyDialerFromURL(cfg.ProxyURL)
-	if err != nil {
-		log.Fatalf("Failed to create proxy dialer: %v", err)
-	}
-
 	// Session storage
 	st := &telegram.FileSessionStorage{Path: "session.json"}
 
-	// Client
-	client := telegram.NewClient(cfg.APIID, cfg.APIHash, telegram.Options{
+	// Telegram options
+	options := telegram.Options{
 		SessionStorage: st,
-		Resolver: dcs.Plain(dcs.PlainOptions{
-			Dial: dial.DialContext,
-		}),
-	})
+	}
 
+	// Network settings
+	if cfg.ProxyURL != "" {
+		dial, err := dialer.CreateProxyDialerFromURL(cfg.ProxyURL)
+		if err != nil {
+			log.Fatalf("Failed to create proxy dialer: %v", err)
+		}
+
+		options.Resolver = dcs.Plain(dcs.PlainOptions{
+			Dial: dial.DialContext,
+		})
+	}
+
+	// Client
+	client := telegram.NewClient(cfg.APIID, cfg.APIHash, options)
 	// Login flow
 	flow := auth.NewFlow(
 		auth.CodeOnly(cfg.Phone, &codeOnlyAuth{}),
