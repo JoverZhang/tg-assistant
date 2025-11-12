@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"tg-storage-assistant/internal/config"
+	"tg-storage-assistant/internal/dialer"
 	"tg-storage-assistant/internal/fileprocessor"
 	"tg-storage-assistant/internal/video"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/gotd/td/telegram/dcs"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
-	"golang.org/x/net/proxy"
 )
 
 func main() {
@@ -44,9 +44,9 @@ func main() {
 	}
 
 	// Network settings
-	sock5, err := proxy.SOCKS5("tcp", "127.0.0.1:8890", &proxy.Auth{}, proxy.Direct)
+	dial, err := dialer.CreateProxyDialerFromURL(cfg.ProxyURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to create proxy dialer: %v", err)
 	}
 
 	// Session storage
@@ -56,7 +56,7 @@ func main() {
 	client := telegram.NewClient(cfg.APIID, cfg.APIHash, telegram.Options{
 		SessionStorage: st,
 		Resolver: dcs.Plain(dcs.PlainOptions{
-			Dial: sock5.(proxy.ContextDialer).DialContext,
+			Dial: dial.DialContext,
 		}),
 	})
 
