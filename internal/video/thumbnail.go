@@ -8,8 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"golang.org/x/image/draw"
 )
@@ -157,28 +155,28 @@ func ComposeGrid(framePaths []string, cols, rows int, outputPath string) error {
 	return nil
 }
 
-// getVideoDuration returns the duration of a video in seconds using ffprobe
-func getVideoDuration(videoPath string) (float64, error) {
-	cmd := exec.Command("ffprobe",
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1",
-		videoPath,
-	)
+// // getVideoDuration returns the duration of a video in seconds using ffprobe
+// func getVideoDuration(videoPath string) (float64, error) {
+// 	cmd := exec.Command("ffprobe",
+// 		"-v", "error",
+// 		"-show_entries", "format=duration",
+// 		"-of", "default=noprint_wrappers=1:nokey=1",
+// 		videoPath,
+// 	)
 
-	output, err := cmd.Output()
-	if err != nil {
-		return 0, fmt.Errorf("ffprobe command failed: %w", err)
-	}
+// 	output, err := cmd.Output()
+// 	if err != nil {
+// 		return 0, fmt.Errorf("ffprobe command failed: %w", err)
+// 	}
 
-	durationStr := strings.TrimSpace(string(output))
-	duration, err := strconv.ParseFloat(durationStr, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse duration: %w", err)
-	}
+// 	durationStr := strings.TrimSpace(string(output))
+// 	duration, err := strconv.ParseFloat(durationStr, 64)
+// 	if err != nil {
+// 		return 0, fmt.Errorf("failed to parse duration: %w", err)
+// 	}
 
-	return duration, nil
-}
+// 	return duration, nil
+// }
 
 // loadImage loads an image from a file
 func loadImage(path string) (image.Image, error) {

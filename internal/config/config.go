@@ -11,23 +11,19 @@ import (
 // Config holds the application configuration
 type Config struct {
 	// MTProto credentials
-	SessionFile    string
-	APIID          int
-	APIHash        string
-	Phone          string
-	StorageChatID  int64
+	SessionFile   string
+	APIID         int
+	APIHash       string
+	Phone         string
+	StorageChatID int64
 
 	// Proxy settings
-	ProxyURL string // e.g., "socks5://127.0.0.1:1080" or "http://127.0.0.1:8080"
+	ProxyURL string
 
 	// File paths
 	LocalDir string
 	DoneDir  string
 	MaxSize  int64 // Maximum file size for video splitting in bytes (0 = no splitting)
-
-	// Legacy Bot API (deprecated, kept for backward compatibility)
-	Token  string
-	ChatID int64
 }
 
 // Parse parses command-line flags and returns a Config
@@ -50,10 +46,6 @@ func Parse() (*Config, error) {
 	flag.StringVar(&cfg.LocalDir, "local-dir", "", "Source directory path containing files to upload")
 	flag.StringVar(&cfg.DoneDir, "done-dir", "", "Destination directory path for successfully uploaded files")
 	flag.StringVar(&maxSizeStr, "max-size", "", "Maximum file size for video splitting (e.g., \"2G\", \"500M\", \"1.5G\")")
-
-	// Legacy Bot API flags (deprecated)
-	flag.StringVar(&cfg.Token, "token", "", "[DEPRECATED] Telegram bot token for authentication")
-	flag.Int64Var(&cfg.ChatID, "chat-id", 0, "[DEPRECATED] Target Telegram chat ID")
 
 	flag.Parse()
 
