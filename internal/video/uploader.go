@@ -84,7 +84,7 @@ func ProcessVideo(
 	}
 
 	log.Printf("Uploading media group (%d items: 1 preview + %d video parts)...", len(mediaItems), len(videoParts))
-	up := uploader.NewUploader(client.API()).WithPartSize(512 * 1024)
+	up := uploader.NewUploader(client.API()).WithPartSize(512 * 1024).WithProgress(&UploadProgress{})
 	album := []tg.InputSingleMedia{}
 	for _, item := range mediaItems {
 		log.Println("uploading item: ", item.FilePath)
@@ -111,6 +111,13 @@ func ProcessVideo(
 	}
 	log.Println("Album sent.")
 	return 0, nil, nil
+}
+
+type UploadProgress struct{}
+
+func (p *UploadProgress) Chunk(ctx context.Context, state uploader.ProgressState) error {
+	log.Printf("Uploading %s (total: %d, uploaded: %d): %d%%", state.Name, state.Total, state.Uploaded, state.Uploaded*100/state.Total)
+	return nil
 }
 
 func LogFileInfo(filename string, size int64, success bool, err error) {

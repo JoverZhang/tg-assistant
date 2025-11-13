@@ -28,18 +28,6 @@ init-test-uploader:
 test-upload:
 	go test -v ./internal/telegram -run TestUpload
 
-run-test-uploader:
-	@echo "Running test uploader..."
-	go run ./cmd/uploader \
-		-api-id="$(API_ID)" \
-		-api-hash="$(API_HASH)" \
-		-phone="$(PHONE)" \
-		-local-dir="/tmp/test-uploader/local" \
-		-done-dir="/tmp/test-uploader/done" \
-		-storage-chat-id="$(CHAT_ID)" \
-		-proxy="$(PROXY_URL)" \
-		-max-size="30MB"
-
 run-test-uploader2:
 	@echo "Running test uploader2..."
 	go run ./cmd/uploader2 \
@@ -52,12 +40,11 @@ run-test-uploader2:
 		-proxy="$(PROXY_URL)" \
 		-max-size="60MB"
 
-build-uploader:
-	@echo "Building uploader binary..."
-	go build -o ./bin/uploader ./cmd/uploader
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ./bin/uploader.exe ./cmd/uploader
-
 build-uploader2:
 	@echo "Building uploader2 binary..."
 	go build -o ./bin/uploader2 ./cmd/uploader2
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ./bin/uploader2.exe ./cmd/uploader2
+
+build-uploader2-and-upload: build-uploader2
+	@echo "Building uploader2 and uploading files..."
+	mcli cp ./bin/uploader2 ./bin/uploader2.exe singapore/test-tg-assistant
