@@ -23,20 +23,9 @@ func ProcessVideo(
 	client *telegram.Client,
 	ctx context.Context,
 	peer tg.InputPeerClass,
-	filePath, tag, description string,
+	filePath, tag, description, tempDir string,
 	maxSize int64,
 ) (int, []string, error) {
-	// Create temporary directory for video processing
-	tempDir := filepath.Join(os.TempDir(), "uploader_video_processing")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return 0, nil, fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
-	cleanup := func() {
-		os.RemoveAll(tempDir)
-	}
-	defer cleanup()
-
 	// Step 1: Generate preview thumbnail (5×6 grid, 30 frames)
 	log.Printf("Extracting 30 frames for preview...")
 	frames, err := ExtractFrames(filePath, 30, tempDir)
@@ -116,7 +105,7 @@ func ProcessVideo(
 type UploadProgress struct{}
 
 func (p *UploadProgress) Chunk(ctx context.Context, state uploader.ProgressState) error {
-	log.Printf("Uploading %s (total: %d, uploaded: %d): %d%%", state.Name, state.Total, state.Uploaded, state.Uploaded*100/state.Total)
+	log.Printf("Uploading %s (): %d%%", state.Name, state.Uploaded*100/state.Total)
 	return nil
 }
 

@@ -22,6 +22,7 @@ type Config struct {
 
 	// File paths
 	LocalDir string
+	TempDir  string
 	DoneDir  string
 	MaxSize  int64 // Maximum file size for video splitting in bytes (0 = no splitting)
 }
@@ -44,6 +45,7 @@ func Parse() (*Config, error) {
 
 	// File path flags
 	flag.StringVar(&cfg.LocalDir, "local-dir", "", "Source directory path containing files to upload")
+	flag.StringVar(&cfg.TempDir, "temp-dir", "", "Temporary directory path for video processing")
 	flag.StringVar(&cfg.DoneDir, "done-dir", "", "Destination directory path for successfully uploaded files")
 	flag.StringVar(&maxSizeStr, "max-size", "", "Maximum file size for video splitting (e.g., \"2G\", \"500M\", \"1.5G\")")
 
@@ -84,6 +86,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("local-dir is required")
 	}
 
+	if c.TempDir == "" {
+		return fmt.Errorf("temp-dir is required")
+	}
+
 	if c.DoneDir == "" {
 		return fmt.Errorf("done-dir is required")
 	}
@@ -98,6 +104,13 @@ func (c *Config) Validate() error {
 	// Check if local directory exists
 	if _, err := os.Stat(c.LocalDir); os.IsNotExist(err) {
 		return fmt.Errorf("local-dir does not exist: %s", c.LocalDir)
+	}
+
+	// Create temp directory if it doesn't exist
+	if _, err := os.Stat(c.TempDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(c.TempDir, 0755); err != nil {
+			return fmt.Errorf("failed to create temp-dir: %w", err)
+		}
 	}
 
 	// Create done directory if it doesn't exist

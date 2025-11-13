@@ -35,6 +35,7 @@ run-test-uploader2:
 		-api-hash="$(API_HASH)" \
 		-phone="$(PHONE)" \
 		-local-dir="/tmp/test-uploader/local" \
+		-temp-dir="/tmp/test-uploader/temp" \
 		-done-dir="/tmp/test-uploader/done" \
 		-storage-chat-id="$(CHAT_ID)" \
 		-proxy="$(PROXY_URL)" \
