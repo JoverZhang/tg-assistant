@@ -4,8 +4,15 @@ go 1.25.1
 
 require (
 	github.com/joho/godotenv v1.5.1
+	github.com/schollz/progressbar/v3 v3.18.0
 	golang.org/x/image v0.0.0-20190802002840-cff245a6509b
 	gopkg.in/telebot.v4 v4.0.0-beta.5
+)
+
+require (
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+	golang.org/x/term v0.36.0 // indirect
 )
 
 require (
@@ -32,7 +39,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.43.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
 	golang.org/x/mod v0.29.0 // indirect

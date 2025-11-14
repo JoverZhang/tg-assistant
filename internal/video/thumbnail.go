@@ -7,7 +7,7 @@ import (
 	"image/jpeg"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"tg-storage-assistant/internal/logger"
 
 	"golang.org/x/image/draw"
 )
@@ -38,44 +38,7 @@ func ExtractFrames(videoPath string, count int, outputDir string) ([]string, err
 		return nil, fmt.Errorf("failed to get video duration: %w", err)
 	}
 
-	if duration <= 0 {
-		return nil, fmt.Errorf("invalid video duration: %f", duration)
-	}
-
-	// Calculate timestamps for frame extraction
-	interval := duration / float64(count)
-	var framePaths []string
-
-	for i := 0; i < count; i++ {
-		timestamp := interval * float64(i)
-		framePath := filepath.Join(outputDir, fmt.Sprintf("frame_%03d.jpg", i))
-
-		// Extract frame at timestamp
-		cmd := exec.Command("ffmpeg",
-			"-ss", fmt.Sprintf("%.2f", timestamp),
-			"-i", videoPath,
-			"-vframes", "1",
-			"-q:v", "2", // High quality
-			"-y", // Overwrite output files
-			framePath,
-		)
-
-		// Run ffmpeg with suppressed output
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-
-		if err := cmd.Run(); err != nil {
-			// Clean up already extracted frames
-			for _, path := range framePaths {
-				os.Remove(path)
-			}
-			return nil, fmt.Errorf("failed to extract frame %d: %w", i, err)
-		}
-
-		framePaths = append(framePaths, framePath)
-	}
-
-	return framePaths, nil
+	return extractFrames(videoPath, outputDir, duration, count)
 }
 
 // ComposeGrid arranges frames into a grid and saves as a single JPEG
@@ -152,31 +115,10 @@ func ComposeGrid(framePaths []string, cols, rows int, outputPath string) error {
 		return fmt.Errorf("failed to encode JPEG: %w", err)
 	}
 
+	logger.Debug.Printf("Grid composed into [%s](%dx%d)",
+		outputPath, grid.Bounds().Dx(), grid.Bounds().Dy())
 	return nil
 }
-
-// // getVideoDuration returns the duration of a video in seconds using ffprobe
-// func getVideoDuration(videoPath string) (float64, error) {
-// 	cmd := exec.Command("ffprobe",
-// 		"-v", "error",
-// 		"-show_entries", "format=duration",
-// 		"-of", "default=noprint_wrappers=1:nokey=1",
-// 		videoPath,
-// 	)
-
-// 	output, err := cmd.Output()
-// 	if err != nil {
-// 		return 0, fmt.Errorf("ffprobe command failed: %w", err)
-// 	}
-
-// 	durationStr := strings.TrimSpace(string(output))
-// 	duration, err := strconv.ParseFloat(durationStr, 64)
-// 	if err != nil {
-// 		return 0, fmt.Errorf("failed to parse duration: %w", err)
-// 	}
-
-// 	return duration, nil
-// }
 
 // loadImage loads an image from a file
 func loadImage(path string) (image.Image, error) {

@@ -39,7 +39,7 @@ run-test-uploader2:
 		-done-dir="/tmp/test-uploader/done" \
 		-storage-chat-id="$(CHAT_ID)" \
 		-proxy="$(PROXY_URL)" \
-		-max-size="60MB"
+		-max-size="20MB"
 
 build-uploader2:
 	@echo "Building uploader2 binary..."

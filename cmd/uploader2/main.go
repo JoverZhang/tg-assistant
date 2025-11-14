@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"tg-storage-assistant/internal/client"
 	"tg-storage-assistant/internal/config"
 	"tg-storage-assistant/internal/fileprocessor"
+	"tg-storage-assistant/internal/logger"
 	"tg-storage-assistant/internal/video"
 )
 
@@ -18,23 +18,21 @@ func main() {
 	// Parse configuration from command-line arguments
 	cfg, err := config.Parse()
 	if err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 
 	// Check if ffmpeg and ffprobe are available (required for video processing)
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		log.Println("WARNING: ffmpeg not found in PATH. Video processing will fail")
-		log.Fatal("please install ffmpeg to enable video processing features")
+		logger.Error.Fatal("ffmpeg not found in PATH. Video processing will fail")
 	}
 	if _, err := exec.LookPath("ffprobe"); err != nil {
-		log.Println("WARNING: ffprobe not found in PATH. Video processing will fail")
-		log.Fatal("please install ffprobe (usually bundled with ffmpeg)")
+		logger.Error.Fatal("ffprobe not found in PATH. Video processing will fail")
 	}
 
 	// Create client
 	client, err := client.NewClient(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 
 	// Run client
@@ -55,7 +53,7 @@ func main() {
 			return fmt.Errorf("resolve peer: %w", err)
 		}
 
-		log.Printf("Found %d files to process", len(files))
+		logger.Info.Printf("Found %d files to process", len(files))
 
 		// Process each file
 		stats := fileprocessor.Stats{}
@@ -65,7 +63,7 @@ func main() {
 			// Parse filename
 			tag, description, err := fileprocessor.ParseFilename(filename)
 			if err != nil {
-				log.Printf("WARNING: Skipping file %s - %v", filename, err)
+				logger.Warn.Printf("Skipping file %s - %v", filename, err)
 				stats.Failed++
 				continue
 			}
@@ -76,19 +74,19 @@ func main() {
 			// Get file info for logging
 			fileInfo, err := os.Stat(filePath)
 			if err != nil {
-				log.Printf("WARNING: Failed to get file info for %s - %v", filename, err)
+				logger.Warn.Printf("Failed to get file info for %s - %v", filename, err)
 				stats.Failed++
 				continue
 			}
 
 			if !fileprocessor.IsVideoFile(filename) {
-				log.Printf("WARNING: Skipping non-video file: %s", filename)
+				logger.Warn.Printf("Skipping non-video file: %s", filename)
 				stats.Failed++
 				continue
 			}
 
 			// Process video
-			log.Printf("Processing video: %s", filename)
+			logger.Info.Printf("Processing video: %s", filename)
 			msgID, additionalFiles, err := video.ProcessVideo(client.Client, ctx, peer, filePath, tag, description, cfg.TempDir, cfg.MaxSize)
 			if err != nil {
 				video.LogFileInfo(filename, fileInfo.Size(), false, err)
@@ -98,7 +96,7 @@ func main() {
 
 			// Move video and additional files to done directory
 			if err := video.MoveVideoFiles(cfg, filename, msgID, additionalFiles); err != nil {
-				log.Printf("WARNING: Uploaded %s (msg ID: %d) but failed to move files - %v", filename, msgID, err)
+				logger.Warn.Printf("Uploaded %s (msg ID: %d) but failed to move files - %v", filename, msgID, err)
 				stats.Failed++
 				continue
 			}
@@ -106,6 +104,6 @@ func main() {
 
 		return nil
 	}); err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 }

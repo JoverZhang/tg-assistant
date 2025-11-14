@@ -5,14 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"mime"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"tg-storage-assistant/internal/config"
+	"tg-storage-assistant/internal/logger"
+	"tg-storage-assistant/internal/ui"
+	"tg-storage-assistant/internal/util"
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/uploader"
@@ -26,29 +26,41 @@ func ProcessVideo(
 	filePath, tag, description, tempDir string,
 	maxSize int64,
 ) (int, []string, error) {
+	logger.Info.Println("┏━━━━━━━━━━━━━━━ Processing video... ━━━━━━━━━━━━━━━┓")
+
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+	logger.Info.Printf("  FILE_NAME: %s", filePath)
+	logger.Info.Printf("  TAG: %s", tag)
+	logger.Info.Printf("  DESCRIPTION: %s", description)
+	logger.Info.Printf("  SIZE: %s", util.FormatBytesToHumanReadable(fileInfo.Size()))
+
 	// Step 1: Generate preview thumbnail (5×6 grid, 30 frames)
-	log.Printf("Extracting 30 frames for preview...")
+	logger.Info.Printf("Extracting 30 frames for preview...")
 	frames, err := ExtractFrames(filePath, 30, tempDir)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to extract frames: %w", err)
 	}
 
 	previewPath := filepath.Join(tempDir, fmt.Sprintf("%s_%s_preview.jpg", tag, description))
-	log.Printf("Composing preview grid...")
+	logger.Info.Printf("Composing preview grid...")
 	if err := ComposeGrid(frames, 5, 6, previewPath); err != nil {
 		return 0, nil, fmt.Errorf("failed to compose grid: %w", err)
 	}
 
 	// Step 2: Split video if needed
-	log.Printf("Checking video size for splitting...")
+	logger.Info.Printf("Splitting video into parts if needed...")
 	videoParts, err := splitVideo(filePath, maxSize, tempDir)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to split video: %w", err)
 	}
 
 	// Step 3: Validate media group size
-	if err := ValidateChunkCount(len(videoParts)); err != nil {
-		return 0, nil, err
+	if 1+len(videoParts) > 10 {
+		return 0, nil, fmt.Errorf("media group would have %d items (1 preview + %d video parts), exceeds Telegram limit of 10",
+			1+len(videoParts), len(videoParts))
 	}
 
 	// Step 4: Build media group
@@ -72,16 +84,29 @@ func ProcessVideo(
 		})
 	}
 
-	log.Printf("Uploading media group (%d items: 1 preview + %d video parts)...", len(mediaItems), len(videoParts))
-	up := uploader.NewUploader(client.API()).WithPartSize(512 * 1024).WithProgress(&UploadProgress{})
+	logger.Info.Printf("Preparing album with %d items: 1 preview + %d video parts...", len(mediaItems), len(videoParts))
+
+	for i, item := range mediaItems {
+		fileInfo, err := os.Stat(item.FilePath)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to get file info: %w", err)
+		}
+		logger.Debug.Printf("┃ #%d (%s - %-9s)[%s] %s\n",
+			i+1,
+			item.MediaType, util.FormatBytesToHumanReadable(fileInfo.Size()),
+			util.SafeBase(item.FilePath), item.Caption)
+	}
+
+	up := uploader.NewUploader(client.API()).
+		WithPartSize(512 * 1024).
+		WithProgress(ui.NewUploadProgress())
 	album := []tg.InputSingleMedia{}
 	for _, item := range mediaItems {
-		log.Println("uploading item: ", item.FilePath)
 		inputFile, err := up.FromPath(ctx, item.FilePath)
 		if err != nil {
 			return 0, nil, fmt.Errorf("upload %q: %w", item.FilePath, err)
 		}
-		log.Println("uploaded item: ", inputFile)
+		logger.Debug.Println("uploaded item: ", inputFile)
 
 		switch item.MediaType {
 		case "photo":
@@ -96,17 +121,11 @@ func ProcessVideo(
 		MultiMedia: album,
 	})
 	if err != nil {
-		return 0, nil, fmt.Errorf("send album: %w", err)
+		return 0, nil, err
 	}
-	log.Println("Album sent.")
+
+	logger.Info.Println("┗━━━━━━━━━━━ Video successfully uploaded ━━━━━━━━━━━┛")
 	return 0, nil, nil
-}
-
-type UploadProgress struct{}
-
-func (p *UploadProgress) Chunk(ctx context.Context, state uploader.ProgressState) error {
-	log.Printf("Uploading %s (): %d%%", state.Name, state.Uploaded*100/state.Total)
-	return nil
 }
 
 func LogFileInfo(filename string, size int64, success bool, err error) {
@@ -117,9 +136,9 @@ func LogFileInfo(filename string, size int64, success bool, err error) {
 
 	sizeKB := float64(size) / 1024.0
 	if err != nil {
-		log.Printf("[%s] %s (%.2f KB) - Error: %v", status, filename, sizeKB, err)
+		logger.Warn.Printf("[%s] %s (%.2f KB) - Error: %v", status, filename, sizeKB, err)
 	} else {
-		log.Printf("[%s] %s (%.2f KB)", status, filename, sizeKB)
+		logger.Info.Printf("[%s] %s (%.2f KB)", status, filename, sizeKB)
 	}
 }
 
@@ -262,7 +281,7 @@ func splitVideo(videoPath string, maxSize int64, outputDir string) ([]string, er
 
 	totalDuration, err := getVideoDuration(videoPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get video duration: %w", err)
+		return nil, err
 	}
 
 	// Split videos by specified maxSize
@@ -274,13 +293,13 @@ func splitVideo(videoPath string, maxSize int64, outputDir string) ([]string, er
 		outputPath := fmt.Sprintf(outputPattern, i)
 		err := splitVideoByDuration(videoPath, outputPath, int64(curDuration), maxSize)
 		if err != nil {
-			return nil, fmt.Errorf("failed to split video: %w", err)
+			return nil, err
 		}
 		result = append(result, outputPath)
 
 		newDuration, err := getVideoDuration(outputPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get video duration: %w", err)
+			return nil, err
 		}
 
 		curDuration += newDuration
@@ -288,44 +307,4 @@ func splitVideo(videoPath string, maxSize int64, outputDir string) ([]string, er
 	}
 
 	return result, nil
-}
-
-func splitVideoByDuration(videoPath, outputPath string, beginDuration, maxSize int64) error {
-	cmd := exec.Command("ffmpeg",
-		"-i", videoPath,
-		"-ss", strconv.FormatInt(beginDuration, 10),
-		"-fs", strconv.FormatInt(maxSize, 10),
-		"-c", "copy", // Copy codec (no re-encoding)
-		"-y", // Overwrite output files
-		outputPath)
-	log.Println("Command: ", cmd.String())
-
-	_, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to split video: %w", err)
-	}
-	return nil
-}
-
-func getVideoDuration(videoPath string) (float64, error) {
-	cmd := exec.Command(
-		"ffprobe",
-		"-i", videoPath,
-		"-show_entries", "format=duration",
-		"-v", "quiet",
-		"-of", "default=noprint_wrappers=1:nokey=1")
-	log.Println("Command: ", cmd.String())
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get video duration: %w", err)
-	}
-
-	durationStr := strings.TrimSpace(string(output))
-	duration, err := strconv.ParseFloat(durationStr, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse duration: %w", err)
-	}
-	return duration, nil
-
 }
