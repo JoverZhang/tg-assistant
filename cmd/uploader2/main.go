@@ -87,16 +87,16 @@ func main() {
 
 			// Process video
 			logger.Info.Printf("Processing video: %s", filename)
-			msgID, additionalFiles, err := video.ProcessVideo(client.Client, ctx, peer, filePath, tag, description, cfg.TempDir, cfg.MaxSize)
+			err = video.ProcessVideo(client, peer, filePath, tag, description, cfg.TempDir, cfg.MaxSize)
 			if err != nil {
 				video.LogFileInfo(filename, fileInfo.Size(), false, err)
 				stats.Failed++
 				continue
 			}
 
-			// Move video and additional files to done directory
-			if err := video.MoveVideoFiles(cfg, filename, msgID, additionalFiles); err != nil {
-				logger.Warn.Printf("Uploaded %s (msg ID: %d) but failed to move files - %v", filename, msgID, err)
+			// Move video file to done directory
+			if err := video.MoveVideoFiles(cfg, filename); err != nil {
+				logger.Warn.Printf("Uploaded %s but failed to move file - %v", filename, err)
 				stats.Failed++
 				continue
 			}

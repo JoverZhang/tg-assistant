@@ -15,7 +15,7 @@ import (
 type Client struct {
 	ctx    context.Context
 	cfg    *config.Config
-	Client *telegram.Client
+	client *telegram.Client
 	flow   auth.Flow
 }
 
@@ -51,14 +51,14 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 	return &Client{
 		ctx:    ctx,
 		cfg:    cfg,
-		Client: client,
+		client: client,
 		flow:   flow,
 	}, nil
 }
 
 func (c *Client) ResolvePeer(chatID int64) (tg.InputPeerClass, error) {
 	// Get dialogs to find the peer with access hash
-	dialogs, err := c.Client.API().MessagesGetDialogs(c.ctx, &tg.MessagesGetDialogsRequest{
+	dialogs, err := c.client.API().MessagesGetDialogs(c.ctx, &tg.MessagesGetDialogsRequest{
 		OffsetPeer: &tg.InputPeerEmpty{},
 		Limit:      100,
 	})
@@ -101,7 +101,7 @@ func (c *Client) ResolvePeer(chatID int64) (tg.InputPeerClass, error) {
 }
 
 func (c *Client) Run(f func(ctx context.Context) error) error {
-	return c.Client.Run(c.ctx, func(ctx context.Context) error {
+	return c.client.Run(c.ctx, func(ctx context.Context) error {
 		if err := c.LoginIfNecessary(); err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
@@ -112,7 +112,7 @@ func (c *Client) Run(f func(ctx context.Context) error) error {
 
 func (c *Client) LoginIfNecessary() error {
 	// Login if necessary
-	if err := c.Client.Auth().IfNecessary(c.ctx, c.flow); err != nil {
+	if err := c.client.Auth().IfNecessary(c.ctx, c.flow); err != nil {
 		return fmt.Errorf("auth failed: %w", err)
 	}
 	return nil
