@@ -21,6 +21,11 @@ func ProcessVideo(
 	filePath, tag, description, tempDir string,
 	maxSize int64,
 ) error {
+	defer func() {
+		logger.Info.Printf("Cleaning up temporary directory: %s", tempDir)
+		os.RemoveAll(tempDir)
+	}()
+
 	logger.Info.Println("┏━━━━━━━━━━━━━━━ Processing video... ━━━━━━━━━━━━━━━┓")
 
 	fileInfo, err := os.Stat(filePath)
