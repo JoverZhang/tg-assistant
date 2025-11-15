@@ -52,7 +52,7 @@ func ProcessVideo(
 
 	// Step 2: Split video if needed
 	logger.Info.Printf("Splitting video into parts if needed...")
-	videoParts, err := splitVideo(filePath, maxSize, tempDir)
+	videoParts, err := splitVideoV2(filePath, maxSize, tempDir)
 	if err != nil {
 		return fmt.Errorf("failed to split video: %w", err)
 	}
@@ -90,44 +90,6 @@ func ProcessVideo(
 	if err != nil {
 		return fmt.Errorf("failed to send multi media: %w", err)
 	}
-
-	// for i, item := range mediaItems {
-	// 	fileInfo, err := os.Stat(item.FilePath)
-	// 	if err != nil {
-	// 		return fmt.Errorf("failed to get file info: %w", err)
-	// 	}
-	// 	logger.Debug.Printf("┃ #%d (%s - %-9s)[%s] %s\n",
-	// 		i+1,
-	// 		item.MediaType, util.FormatBytesToHumanReadable(fileInfo.Size()),
-	// 		util.SafeBase(item.FilePath), item.Caption)
-	// }
-
-	// up := uploader.NewUploader(client.API()).
-	// 	WithPartSize(512 * 1024).
-	// 	WithProgress(ui.NewUploadProgress())
-	// album := []tg.InputSingleMedia{}
-	// for _, item := range mediaItems {
-	// 	inputFile, err := up.FromPath(ctx, item.FilePath)
-	// 	if err != nil {
-	// 		return fmt.Errorf("upload %q: %w", item.FilePath, err)
-	// 	}
-	// 	logger.Debug.Println("uploaded item: ", inputFile)
-
-	// 	switch item.MediaType {
-	// 	case "photo":
-	// 		album = append(album, buildPhotoMedia(client.API(), ctx, inputFile, item.Caption))
-	// 	case "video":
-	// 		album = append(album, buildVideoMedia(client.API(), ctx, inputFile, item.Caption))
-	// 	}
-	// }
-
-	// _, err = client.API().MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
-	// 	Peer:       peer,
-	// 	MultiMedia: album,
-	// })
-	// if err != nil {
-	// 	return err
-	// }
 
 	logger.Info.Println("┗━━━━━━━━━━━ Video successfully uploaded ━━━━━━━━━━━┛")
 	return nil
@@ -215,6 +177,84 @@ func splitVideo(videoPath string, maxSize int64, outputDir string) ([]string, er
 
 		curDuration += newDuration
 		i++
+	}
+
+	return result, nil
+}
+func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, error) {
+	fileInfo, err := os.Stat(videoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	fileSize := fileInfo.Size()
+
+	fname := filepath.Base(videoPath)
+	ext := filepath.Ext(fname)
+	basename := strings.TrimSuffix(fname, ext)
+
+	// If no maxSize specified or file is smaller, return original
+	if maxSize <= 0 || fileSize <= maxSize {
+		return []string{videoPath}, nil
+	}
+
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	durSec, err := getVideoDurationSeconds(videoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	bitrate, err := getVideoBitrate(videoPath)
+	if err != nil {
+		return nil, err
+	}
+	if bitrate <= 0 {
+		bitrate = (fileSize * 8) / durSec
+		logger.Warn.Printf("No metadata bitrate, estimate bitrate=%d bps", bitrate)
+	}
+
+	segmentTime := (maxSize * 8) / bitrate
+	if segmentTime < 1 {
+		segmentTime = 1
+	}
+
+	logger.Debug.Printf("Video: %s, duration=%ds, bitrate=%d bps, segment_time≈%ds (target %dMB/segment)",
+		videoPath, durSec, bitrate, segmentTime, maxSize)
+
+	tmpPattern := filepath.Join(outputDir, basename+"_%03d.ts")
+	logger.Debug.Printf("Splitting video (generate .ts): %s", tmpPattern)
+
+	err = generateTSFiles(videoPath, tmpPattern, segmentTime)
+	if err != nil {
+		return nil, err
+	}
+
+	// remux each .ts -> mp4
+	tsGlob := filepath.Join(outputDir, basename+"_*"+".ts")
+	tsFiles, _ := filepath.Glob(tsGlob)
+
+	result := []string{}
+
+	idx := 0
+	for _, tsFile := range tsFiles {
+		outMp4 := filepath.Join(outputDir, fmt.Sprintf("%s_%d%s", basename, idx, ext))
+		if _, err := os.Stat(outMp4); err == nil {
+			logger.Debug.Printf("Target already exists, skip %s", filepath.Base(outMp4))
+			idx++
+			continue
+		}
+
+		logger.Debug.Printf("remux: %s -> %s", filepath.Base(tsFile), filepath.Base(outMp4))
+		err = remuxTSFile(tsFile, outMp4)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, outMp4)
+		idx++
 	}
 
 	return result, nil

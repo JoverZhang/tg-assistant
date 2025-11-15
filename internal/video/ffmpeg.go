@@ -27,6 +27,87 @@ func splitVideoByDuration(videoPath, outputPath string, beginDuration, maxSize i
 	return nil
 }
 
+func getVideoDurationSeconds(videoPath string) (int64, error) {
+	cmd := exec.Command(
+		"ffprobe",
+		"-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		videoPath,
+	)
+	logger.Debug.Println("Command: ", cmd.String())
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get video duration: %w", err)
+	}
+
+	durStr := strings.TrimSpace(string(output))
+	durf, err := strconv.ParseFloat(durStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse duration: %w", err)
+	}
+	return int64(durf), nil
+}
+
+func getVideoBitrate(videoPath string) (int64, error) {
+	cmd := exec.Command(
+		"ffprobe",
+		"-v", "error",
+		"-show_entries", "format=bit_rate",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		videoPath,
+	)
+	logger.Debug.Println("Command: ", cmd.String())
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get video bitrate: %w", err)
+	}
+
+	bitrateStr := strings.TrimSpace(string(output))
+	bitrate, err := strconv.ParseInt(bitrateStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse bitrate: %w", err)
+	}
+	return bitrate, nil
+}
+
+func generateTSFiles(outputPath, tmpPattern string, segmentTime int64) error {
+	cmd := exec.Command(
+		"ffmpeg",
+		"-hide_banner", "-loglevel", "info", "-i", outputPath,
+		"-c", "copy", "-map", "0",
+		"-f", "segment",
+		"-segment_time", strconv.FormatInt(segmentTime, 10),
+		"-reset_timestamps", "1",
+		tmpPattern,
+	)
+	logger.Debug.Println("Command: ", cmd.String())
+
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to generate TS files: %w", err)
+	}
+	return nil
+}
+
+func remuxTSFile(tsFile, outMp4 string) error {
+	cmd := exec.Command(
+		"ffmpeg",
+		"-hide_banner", "-loglevel", "info", "-i", tsFile,
+		"-c", "copy", "-bsf:a", "aac_adtstoasc",
+		outMp4,
+	)
+	logger.Debug.Println("Command: ", cmd.String())
+
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remux TS file %s -> %s: %w", tsFile, outMp4, err)
+	}
+	return nil
+}
+
 func getVideoDuration(videoPath string) (float64, error) {
 	cmd := exec.Command(
 		"ffprobe",
