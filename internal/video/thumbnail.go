@@ -6,40 +6,10 @@ import (
 	stddraw "image/draw"
 	"image/jpeg"
 	"os"
-	"os/exec"
 	"tg-storage-assistant/internal/logger"
 
 	"golang.org/x/image/draw"
 )
-
-// ExtractFrames extracts N frames evenly distributed from a video
-// Returns paths to the extracted frame images
-func ExtractFrames(videoPath string, count int, outputDir string) ([]string, error) {
-	if count <= 0 {
-		return nil, fmt.Errorf("frame count must be positive")
-	}
-
-	// Check if ffmpeg and ffprobe are available
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil, fmt.Errorf("ffmpeg not found in PATH: %w", err)
-	}
-	if _, err := exec.LookPath("ffprobe"); err != nil {
-		return nil, fmt.Errorf("ffprobe not found in PATH: %w", err)
-	}
-
-	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	// Get video duration using ffprobe
-	duration, err := getVideoDuration(videoPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get video duration: %w", err)
-	}
-
-	return extractFrames(videoPath, outputDir, duration, count)
-}
 
 // ComposeGrid arranges frames into a grid and saves as a single JPEG
 func ComposeGrid(framePaths []string, cols, rows int, outputPath string) error {

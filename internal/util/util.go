@@ -70,6 +70,19 @@ func FormatBytesToHumanReadable(n int64) string {
 	return fmt.Sprintf("%.2f %s", v, units[i])
 }
 
+func FormatSecondsToHumanReadable(n float64) string {
+	units := []string{"s", "m", "h"}
+	v := float64(n)
+	i := 0
+
+	for v >= 60 && i < len(units)-1 {
+		v /= 60
+		i++
+	}
+
+	return fmt.Sprintf("%.2f %s", v, units[i])
+}
+
 func SafeBase(name string) string {
 	if name == "" {
 		return "file"

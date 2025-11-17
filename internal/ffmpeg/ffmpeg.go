@@ -1,4 +1,4 @@
-package video
+package ffmpeg
 
 import (
 	"fmt"
@@ -10,24 +10,7 @@ import (
 	"tg-storage-assistant/internal/logger"
 )
 
-func splitVideoByDuration(videoPath, outputPath string, beginDuration, maxSize int64) error {
-	cmd := exec.Command("ffmpeg",
-		"-i", videoPath,
-		"-ss", strconv.FormatInt(beginDuration, 10),
-		"-fs", strconv.FormatInt(maxSize, 10),
-		"-c", "copy", // Copy codec (no re-encoding)
-		"-y", // Overwrite output files
-		outputPath)
-	logger.Debug.Println("Command: ", cmd.String())
-
-	_, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to split video: %w", err)
-	}
-	return nil
-}
-
-func getVideoDurationSeconds(videoPath string) (int64, error) {
+func GetVideoDurationSeconds(videoPath string) (int64, error) {
 	cmd := exec.Command(
 		"ffprobe",
 		"-v", "error",
@@ -50,7 +33,7 @@ func getVideoDurationSeconds(videoPath string) (int64, error) {
 	return int64(durf), nil
 }
 
-func getVideoBitrate(videoPath string) (int64, error) {
+func GetVideoBitrate(videoPath string) (int64, error) {
 	cmd := exec.Command(
 		"ffprobe",
 		"-v", "error",
@@ -73,7 +56,7 @@ func getVideoBitrate(videoPath string) (int64, error) {
 	return bitrate, nil
 }
 
-func generateTSFiles(outputPath, tmpPattern string, segmentTime int64) error {
+func GenerateTSFiles(outputPath, tmpPattern string, segmentTime int64) error {
 	cmd := exec.Command(
 		"ffmpeg",
 		"-hide_banner", "-loglevel", "info", "-i", outputPath,
@@ -92,7 +75,7 @@ func generateTSFiles(outputPath, tmpPattern string, segmentTime int64) error {
 	return nil
 }
 
-func remuxTSFile(tsFile, outMp4 string) error {
+func RemuxTSFile(tsFile, outMp4 string) error {
 	cmd := exec.Command(
 		"ffmpeg",
 		"-hide_banner", "-loglevel", "info", "-i", tsFile,
@@ -108,7 +91,7 @@ func remuxTSFile(tsFile, outMp4 string) error {
 	return nil
 }
 
-func getVideoDuration(videoPath string) (float64, error) {
+func GetVideoDuration(videoPath string) (float64, error) {
 	cmd := exec.Command(
 		"ffprobe",
 		"-i", videoPath,
@@ -128,10 +111,43 @@ func getVideoDuration(videoPath string) (float64, error) {
 		return 0, fmt.Errorf("failed to parse duration: %w", err)
 	}
 	return duration, nil
-
 }
 
-func extractFrames(videoPath, outputPath string, totalDuration float64, count int) ([]string, error) {
+func GetVideoResolution(videoPath string) (int64, int64, error) {
+	cmd := exec.Command(
+		"ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=width,height",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		videoPath,
+	)
+	logger.Debug.Println("Command: ", cmd.String())
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get video resolution: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) < 2 {
+		return 0, 0, fmt.Errorf("invalid ffprobe output: %s", output)
+	}
+
+	width, err := strconv.ParseInt(strings.TrimSpace(lines[0]), 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse width: %w", err)
+	}
+
+	height, err := strconv.ParseInt(strings.TrimSpace(lines[1]), 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse height: %w", err)
+	}
+
+	return width, height, nil
+}
+
+func ExtractFrames(videoPath, outputPath string, totalDuration float64, count int) ([]string, error) {
 	if totalDuration <= 0 {
 		return nil, fmt.Errorf("invalid video duration: %f", totalDuration)
 	}

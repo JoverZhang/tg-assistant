@@ -7,6 +7,7 @@ import (
 	"strings"
 	"tg-storage-assistant/internal/client"
 	"tg-storage-assistant/internal/config"
+	"tg-storage-assistant/internal/ffmpeg"
 	"tg-storage-assistant/internal/logger"
 	"tg-storage-assistant/internal/util"
 
@@ -41,8 +42,12 @@ func ProcessVideo(
 	logger.Info.Printf("  SIZE: %s", util.FormatBytesToHumanReadable(fileInfo.Size()))
 
 	// Step 1: Generate preview thumbnail (5×6 grid, 30 frames)
-	logger.Info.Printf("Extracting 30 frames for preview...")
-	frames, err := ExtractFrames(filePath, 30, tempDir)
+	durTotal, err := ffmpeg.GetVideoDuration(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get video duration: %w", err)
+	}
+	logger.Info.Printf("Extracting 30 frames for preview (total duration: %s)", util.FormatSecondsToHumanReadable(durTotal))
+	frames, err := ffmpeg.ExtractFrames(filePath, tempDir, durTotal, 30)
 	if err != nil {
 		return fmt.Errorf("failed to extract frames: %w", err)
 	}
@@ -106,7 +111,7 @@ func LogFileInfo(filename string, size int64, success bool, err error) {
 
 	sizeKB := float64(size) / 1024.0
 	if err != nil {
-		logger.Warn.Printf("[%s] %s (%.2f KB) - Error: %v", status, filename, sizeKB, err)
+		logger.Error.Printf("[%s] %s (%.2f KB) - Error: %v", status, filename, sizeKB, err)
 	} else {
 		logger.Info.Printf("[%s] %s (%.2f KB)", status, filename, sizeKB)
 	}
@@ -131,60 +136,6 @@ func move(src, dst string) error {
 	return os.Rename(src, dst)
 }
 
-func splitVideo(videoPath string, maxSize int64, outputDir string) ([]string, error) {
-	fileInfo, err := os.Stat(videoPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get file info: %w", err)
-	}
-
-	fileSize := fileInfo.Size()
-
-	// If no maxSize specified or file is smaller, return original
-	if maxSize <= 0 || fileSize <= maxSize {
-		return []string{videoPath}, nil
-	}
-
-	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	// Prepare output pattern
-	ext := filepath.Ext(videoPath)
-	baseName := filepath.Base(videoPath)
-	baseName = baseName[:len(baseName)-len(ext)]
-	outputPattern := filepath.Join(outputDir, fmt.Sprintf("%s_part%%03d%s", baseName, ext))
-
-	totalDuration, err := getVideoDuration(videoPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Split videos by specified maxSize
-	result := []string{}
-	curDuration := 0.0
-	i := 0
-	for curDuration < totalDuration {
-		// Split video by maxSize
-		outputPath := fmt.Sprintf(outputPattern, i)
-		err := splitVideoByDuration(videoPath, outputPath, int64(curDuration), maxSize)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, outputPath)
-
-		newDuration, err := getVideoDuration(outputPath)
-		if err != nil {
-			return nil, err
-		}
-
-		curDuration += newDuration
-		i++
-	}
-
-	return result, nil
-}
-
 func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, error) {
 	fileInfo, err := os.Stat(videoPath)
 	if err != nil {
@@ -207,12 +158,12 @@ func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, 
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	durSec, err := getVideoDurationSeconds(videoPath)
+	durSec, err := ffmpeg.GetVideoDurationSeconds(videoPath)
 	if err != nil {
 		return nil, err
 	}
 
-	bitrate, err := getVideoBitrate(videoPath)
+	bitrate, err := ffmpeg.GetVideoBitrate(videoPath)
 	if err != nil {
 		return nil, err
 	}
@@ -226,13 +177,17 @@ func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, 
 		segmentTime = 1
 	}
 
-	logger.Debug.Printf("Video: %s, duration=%ds, bitrate=%d bps, segment_time≈%ds (target %dMB/segment)",
-		videoPath, durSec, bitrate, segmentTime, maxSize)
+	logger.Debug.Printf("Video: [%s], duration=%s, bitrate=%d bps, segment_time≈%s (target %s/segment)",
+		videoPath,
+		util.FormatSecondsToHumanReadable(float64(durSec)),
+		bitrate,
+		util.FormatSecondsToHumanReadable(float64(segmentTime)),
+		util.FormatBytesToHumanReadable(maxSize))
 
 	tmpPattern := filepath.Join(outputDir, basename+"_%03d.ts")
-	logger.Debug.Printf("Splitting video (generate .ts): %s", tmpPattern)
+	logger.Info.Printf("Splitting video (generate .ts): [%s]", tmpPattern)
 
-	err = generateTSFiles(videoPath, tmpPattern, segmentTime)
+	err = ffmpeg.GenerateTSFiles(videoPath, tmpPattern, segmentTime)
 	if err != nil {
 		return nil, err
 	}
@@ -247,8 +202,7 @@ func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, 
 	for _, tsFile := range tsFiles {
 		outMp4 := filepath.Join(outputDir, fmt.Sprintf("%s_%d%s", basename, idx, ext))
 
-		logger.Debug.Printf("remux: %s -> %s", filepath.Base(tsFile), filepath.Base(outMp4))
-		err = remuxTSFile(tsFile, outMp4)
+		err = ffmpeg.RemuxTSFile(tsFile, outMp4)
 		if err != nil {
 			return nil, err
 		}
