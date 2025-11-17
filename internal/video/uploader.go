@@ -18,12 +18,15 @@ type MediaItem = client.MediaItem
 func ProcessVideo(
 	client *client.Client,
 	peer tg.InputPeerClass,
-	filePath, tag, description, tempDir string,
+	filePath, tag, description string,
 	maxSize int64,
+	tempDir string, cleanupTempDir bool,
 ) error {
 	defer func() {
-		logger.Info.Printf("Cleaning up temporary directory: %s", tempDir)
-		os.RemoveAll(tempDir)
+		if cleanupTempDir {
+			logger.Info.Printf("Cleaning up temporary directory: %s", tempDir)
+			os.RemoveAll(tempDir)
+		}
 	}()
 
 	logger.Info.Println("┏━━━━━━━━━━━━━━━ Processing video... ━━━━━━━━━━━━━━━┓")
@@ -181,6 +184,7 @@ func splitVideo(videoPath string, maxSize int64, outputDir string) ([]string, er
 
 	return result, nil
 }
+
 func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, error) {
 	fileInfo, err := os.Stat(videoPath)
 	if err != nil {
@@ -242,11 +246,6 @@ func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, 
 	idx := 0
 	for _, tsFile := range tsFiles {
 		outMp4 := filepath.Join(outputDir, fmt.Sprintf("%s_%d%s", basename, idx, ext))
-		if _, err := os.Stat(outMp4); err == nil {
-			logger.Debug.Printf("Target already exists, skip %s", filepath.Base(outMp4))
-			idx++
-			continue
-		}
 
 		logger.Debug.Printf("remux: %s -> %s", filepath.Base(tsFile), filepath.Base(outMp4))
 		err = remuxTSFile(tsFile, outMp4)

@@ -39,13 +39,32 @@ run-test-uploader2:
 		-done-dir="/tmp/test-uploader/done" \
 		-storage-chat-id="$(CHAT_ID)" \
 		-proxy="$(PROXY_URL)" \
-		-max-size="20MB"
+		-max-size="20MB" \
+		-cleanup-temp-dir=false
 
 build-uploader2:
 	@echo "Building uploader2 binary..."
-	go build -o ./bin/uploader2 ./cmd/uploader2
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ./bin/uploader2.exe ./cmd/uploader2
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./bin/uploader2 ./cmd/uploader2
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ./bin/uploader2.exe ./cmd/uploader2
 
 build-uploader2-and-upload: build-uploader2
 	@echo "Building uploader2 and uploading files..."
 	mcli cp ./bin/uploader2 ./bin/uploader2.exe singapore/test-tg-assistant
+
+run-docker:
+	docker run --rm -it \
+		-v ./session.json:/session/session.json \
+		-v /tmp/test-uploader:/data \
+		--network host \
+		joverzhang/tg-assistant-uploader:0.1 \
+		-session-file="/session/session.json" \
+		-api-id="$(API_ID)" \
+		-api-hash="$(API_HASH)" \
+		-phone="$(PHONE)" \
+		-local-dir="/data/local" \
+		-temp-dir="/data/temp" \
+		-done-dir="/data/done" \
+		-storage-chat-id="$(CHAT_ID)" \
+		-proxy="$(PROXY_URL)" \
+		-max-size="20MB" \
+		-cleanup-temp-dir=false

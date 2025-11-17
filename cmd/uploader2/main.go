@@ -87,7 +87,7 @@ func main() {
 
 			// Process video
 			logger.Info.Printf("Processing video: %s", filename)
-			err = video.ProcessVideo(client, peer, filePath, tag, description, cfg.TempDir, cfg.MaxSize)
+			err = video.ProcessVideo(client, peer, filePath, tag, description, cfg.MaxSize, cfg.TempDir, cfg.CleanupTempDir)
 			if err != nil {
 				video.LogFileInfo(filename, fileInfo.Size(), false, err)
 				stats.Failed++

@@ -20,10 +20,11 @@ type Config struct {
 	ProxyURL string
 
 	// File paths
-	LocalDir string
-	TempDir  string
-	DoneDir  string
-	MaxSize  int64 // Maximum file size for video splitting in bytes (0 = no splitting)
+	LocalDir       string
+	TempDir        string
+	DoneDir        string
+	MaxSize        int64 // Maximum file size for video splitting in bytes (0 = no splitting)
+	CleanupTempDir bool  // Cleanup temporary directory after processing
 }
 
 // Parse parses command-line flags and returns a Config
@@ -47,6 +48,7 @@ func Parse() (*Config, error) {
 	flag.StringVar(&cfg.TempDir, "temp-dir", "", "Temporary directory path for video processing")
 	flag.StringVar(&cfg.DoneDir, "done-dir", "", "Destination directory path for successfully uploaded files")
 	flag.StringVar(&maxSizeStr, "max-size", "", "Maximum file size for video splitting (e.g., \"2G\", \"500M\", \"1.5G\")")
+	flag.BoolVar(&cfg.CleanupTempDir, "cleanup-temp-dir", true, "Cleanup temporary directory after processing")
 
 	flag.Parse()
 
