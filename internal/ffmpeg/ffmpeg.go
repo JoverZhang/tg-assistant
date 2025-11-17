@@ -113,7 +113,7 @@ func GetVideoDuration(videoPath string) (float64, error) {
 	return duration, nil
 }
 
-func GetVideoResolution(videoPath string) (int64, int64, error) {
+func GetVideoResolution(videoPath string) (int, int, error) {
 	cmd := exec.Command(
 		"ffprobe",
 		"-v", "error",
@@ -144,7 +144,7 @@ func GetVideoResolution(videoPath string) (int64, int64, error) {
 		return 0, 0, fmt.Errorf("failed to parse height: %w", err)
 	}
 
-	return width, height, nil
+	return int(width), int(height), nil
 }
 
 func ExtractFrames(videoPath, outputPath string, totalDuration float64, count int) ([]string, error) {

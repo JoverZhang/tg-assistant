@@ -5,18 +5,21 @@ import (
 	"fmt"
 	"tg-storage-assistant/internal/config"
 	"tg-storage-assistant/internal/dialer"
+	"tg-storage-assistant/internal/ui"
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/dcs"
+	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 )
 
 type Client struct {
-	ctx    context.Context
-	cfg    *config.Config
-	client *telegram.Client
-	flow   auth.Flow
+	ctx      context.Context
+	cfg      *config.Config
+	client   *telegram.Client
+	flow     auth.Flow
+	uploader *uploader.Uploader
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -48,11 +51,17 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 		auth.SendCodeOptions{},
 	)
 
+	// Uploader
+	uploader := uploader.NewUploader(client.API()).
+		WithPartSize(512 * 1024).
+		WithProgress(ui.NewUploadProgress())
+
 	return &Client{
-		ctx:    ctx,
-		cfg:    cfg,
-		client: client,
-		flow:   flow,
+		ctx:      ctx,
+		cfg:      cfg,
+		client:   client,
+		flow:     flow,
+		uploader: uploader,
 	}, nil
 }
 

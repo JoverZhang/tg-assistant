@@ -7,11 +7,10 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"tg-storage-assistant/internal/ffmpeg"
 	"tg-storage-assistant/internal/logger"
-	"tg-storage-assistant/internal/ui"
 	"tg-storage-assistant/internal/util"
 
-	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 )
 
@@ -33,23 +32,13 @@ func (c *Client) SendMultiMedia(peer tg.InputPeerClass, items []MediaItem) error
 			util.SafeBase(item.FilePath), item.Caption)
 	}
 
-	up := uploader.NewUploader(c.client.API()).
-		WithPartSize(512 * 1024).
-		WithProgress(ui.NewUploadProgress())
 	album := []tg.InputSingleMedia{}
 	for _, item := range items {
-		inputFile, err := up.FromPath(c.ctx, item.FilePath)
+		media, err := c.uploadMedia(item)
 		if err != nil {
-			return fmt.Errorf("upload %q: %w", item.FilePath, err)
+			return err
 		}
-		logger.Debug.Println("uploaded item: ", inputFile)
-
-		switch item.MediaType {
-		case "photo":
-			album = append(album, c.buildPhotoMedia(inputFile, item.Caption))
-		case "video":
-			album = append(album, c.buildVideoMedia(inputFile, item.Caption))
-		}
+		album = append(album, *media)
 	}
 
 	_, err := c.client.API().MessagesSendMultiMedia(c.ctx, &tg.MessagesSendMultiMediaRequest{
@@ -59,8 +48,30 @@ func (c *Client) SendMultiMedia(peer tg.InputPeerClass, items []MediaItem) error
 	if err != nil {
 		return err
 	}
-
 	return nil
+}
+
+func (c *Client) uploadMedia(media MediaItem) (*tg.InputSingleMedia, error) {
+	inputFile, err := c.uploader.FromPath(c.ctx, media.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("upload %q: %w", media.FilePath, err)
+	}
+	logger.Debug.Println("uploaded media: ", inputFile)
+
+	switch media.MediaType {
+	case "photo":
+		photo := c.buildPhotoMedia(inputFile, media.Caption)
+		return &photo, nil
+	case "video":
+		width, height, err := ffmpeg.GetVideoResolution(media.FilePath)
+		if err != nil {
+			return nil, err
+		}
+		video := c.buildVideoMedia(inputFile, width, height, media.Caption)
+		return &video, nil
+	}
+
+	return nil, fmt.Errorf("invalid media type: %s", media.MediaType)
 }
 
 func (c *Client) buildPhotoMedia(input tg.InputFileClass, caption string) tg.InputSingleMedia {
@@ -82,7 +93,7 @@ func (c *Client) buildPhotoMedia(input tg.InputFileClass, caption string) tg.Inp
 	}
 }
 
-func (c *Client) buildVideoMedia(inputFile tg.InputFileClass, caption string) tg.InputSingleMedia {
+func (c *Client) buildVideoMedia(inputFile tg.InputFileClass, width, height int, caption string) tg.InputSingleMedia {
 	fileName := func() string {
 		switch v := inputFile.(type) {
 		case *tg.InputFile:
@@ -95,7 +106,11 @@ func (c *Client) buildVideoMedia(inputFile tg.InputFileClass, caption string) tg
 	}()
 
 	attrs := []tg.DocumentAttributeClass{
-		&tg.DocumentAttributeVideo{SupportsStreaming: true},
+		&tg.DocumentAttributeVideo{
+			SupportsStreaming: true,
+			W:                 width,
+			H:                 height,
+		},
 		&tg.DocumentAttributeFilename{FileName: fileName},
 	}
 	media, err := c.client.API().MessagesUploadMedia(c.ctx, &tg.MessagesUploadMediaRequest{
