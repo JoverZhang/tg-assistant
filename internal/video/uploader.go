@@ -60,7 +60,7 @@ func ProcessVideo(
 
 	// Step 2: Split video if needed
 	logger.Info.Printf("Splitting video into parts if needed...")
-	videoParts, err := splitVideoV2(filePath, maxSize, tempDir)
+	videoParts, err := splitVideo(filePath, maxSize, tempDir)
 	if err != nil {
 		return fmt.Errorf("failed to split video: %w", err)
 	}
@@ -140,6 +140,60 @@ func MoveVideoFiles(cfg *config.Config, originalFilename string) error {
 
 func move(src, dst string) error {
 	return os.Rename(src, dst)
+}
+
+func splitVideo(videoPath string, maxSize int64, outputDir string) ([]string, error) {
+	fileInfo, err := os.Stat(videoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	fileSize := fileInfo.Size()
+
+	// If no maxSize specified or file is smaller, return original
+	if maxSize <= 0 || fileSize <= maxSize {
+		return []string{videoPath}, nil
+	}
+
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Prepare output pattern
+	ext := filepath.Ext(videoPath)
+	baseName := filepath.Base(videoPath)
+	baseName = baseName[:len(baseName)-len(ext)]
+	outputPattern := filepath.Join(outputDir, fmt.Sprintf("%s_part%%03d%s", baseName, ext))
+
+	totalDuration, err := ffmpeg.GetVideoDuration(videoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Split videos by specified maxSize
+	result := []string{}
+	curDuration := 0.0
+	i := 0
+	for curDuration < totalDuration {
+		// Split video by maxSize
+		outputPath := fmt.Sprintf(outputPattern, i)
+		err := ffmpeg.SplitVideoByDuration(videoPath, outputPath, int64(curDuration), maxSize)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, outputPath)
+
+		newDuration, err := ffmpeg.GetVideoDuration(outputPath)
+		if err != nil {
+			return nil, err
+		}
+
+		curDuration += newDuration
+		i++
+	}
+
+	return result, nil
 }
 
 func splitVideoV2(videoPath string, maxSize int64, outputDir string) ([]string, error) {

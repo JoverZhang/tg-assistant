@@ -51,7 +51,16 @@ build-uploader2-and-upload: build-uploader2
 	@echo "Building uploader2 and uploading files..."
 	mcli cp ./bin/uploader2 ./bin/uploader2.exe singapore/test-tg-assistant
 
-run-docker:
+build-docker-image: build-uploader2
+	@echo "Building docker image..."
+	docker build \
+		--build-arg APT_PROXY="$(PROXY_URL)" \
+		-t joverzhang/tg-assistant-uploader:0.1 \
+		--network host \
+		.
+
+run-test-docker-image: build-docker-image
+	@echo "Running test docker image..."
 	docker run --rm -it \
 		-v ./session.json:/session/session.json \
 		-v /tmp/test-uploader:/data \

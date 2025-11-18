@@ -10,6 +10,23 @@ import (
 	"tg-storage-assistant/internal/logger"
 )
 
+func SplitVideoByDuration(videoPath, outputPath string, beginDuration, maxSize int64) error {
+	cmd := exec.Command("ffmpeg",
+		"-i", videoPath,
+		"-ss", strconv.FormatInt(beginDuration, 10),
+		"-fs", strconv.FormatInt(maxSize, 10),
+		"-c", "copy", // Copy codec (no re-encoding)
+		"-y", // Overwrite output files
+		outputPath)
+	logger.Debug.Println("Command: ", cmd.String())
+
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to split video: %w", err)
+	}
+	return nil
+}
+
 func GetVideoDurationSeconds(videoPath string) (int64, error) {
 	cmd := exec.Command(
 		"ffprobe",
