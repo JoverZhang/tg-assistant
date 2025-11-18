@@ -85,10 +85,16 @@ func ProcessVideo(
 	// Remaining items: video parts with empty captions
 	// Telegram only shows the first item's caption for the entire album
 	for _, partPath := range videoParts {
+		w, h, err := ffmpeg.GetVideoResolution(partPath)
+		if err != nil {
+			return fmt.Errorf("failed to get file info: %w", err)
+		}
 		mediaItems = append(mediaItems, MediaItem{
 			FilePath:  partPath,
 			MediaType: "video",
 			Caption:   "",
+			W:         w,
+			H:         h,
 		})
 	}
 

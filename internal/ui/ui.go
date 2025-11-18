@@ -9,21 +9,27 @@ import (
 	"time"
 
 	"github.com/gotd/td/telegram/uploader"
-	"github.com/schollz/progressbar/v3"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 )
 
 type UploadProgress struct {
-	mu          sync.Mutex
-	bars        map[int64]*progressbar.ProgressBar // upload ID -> bar
-	last        map[int64]int64                    // upload ID -> last uploaded bytes
-	initedTotal map[int64]bool                     // whether bar created with known total
+	mu       sync.Mutex
+	p        *mpb.Progress
+	bars     map[int64]*mpb.Bar // upload ID -> bar
+	last     map[int64]int64    // upload ID -> last uploaded bytes
+	lastTime map[int64]time.Time
 }
 
 func NewUploadProgress() *UploadProgress {
 	return &UploadProgress{
-		bars:        make(map[int64]*progressbar.ProgressBar),
-		last:        make(map[int64]int64),
-		initedTotal: make(map[int64]bool),
+		p: mpb.New(
+			mpb.WithOutput(os.Stderr),
+			mpb.WithWidth(60),
+		),
+		bars:     make(map[int64]*mpb.Bar),
+		last:     make(map[int64]int64),
+		lastTime: make(map[int64]time.Time),
 	}
 }
 
@@ -31,46 +37,76 @@ func (p *UploadProgress) Chunk(ctx context.Context, st uploader.ProgressState) e
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Create bar when we know total size (>=0). If total is not known, wait.
 	bar, ok := p.bars[st.ID]
-	if !ok && st.Total >= 0 {
-		desc := fmt.Sprintf("Uploading [%s]", util.SafeBase(st.Name))
-		bar = progressbar.NewOptions64(
+	if !ok && st.Total > 0 {
+		name := util.SafeBase(st.Name)
+
+		bar = p.p.New(
 			st.Total,
-			progressbar.OptionShowBytes(true),
-			progressbar.OptionShowCount(),
-			progressbar.OptionSetPredictTime(true),
-			progressbar.OptionThrottle(65*time.Millisecond),
-			progressbar.OptionFullWidth(),
-			progressbar.OptionSetDescription(desc),
-			progressbar.OptionSetWriter(os.Stderr),
-			// progressbar.OptionClearOnFinish(),
+			mpb.BarStyle().Lbound("|").Rbound("|").Filler("█").Tip("█").Padding(" ").Refiller(" "),
+			mpb.PrependDecorators(
+				decor.Name(
+					fmt.Sprintf("Uploading %-25s ", "["+name+"]"),
+					decor.WC{W: 35, C: decor.DSyncWidthR},
+				),
+				decor.Percentage(decor.WC{W: 6}),
+			),
+			mpb.AppendDecorators(
+				decor.CountersKibiByte("% .2f / % .2f"),
+
+				decor.Name(" ", decor.WC{W: 1}),
+				decor.EwmaSpeed(decor.SizeB1000(0), "(% .2f)", 10,
+					decor.WC{W: 10}),
+
+				decor.Name(" ", decor.WC{W: 1}),
+				decor.OnComplete(
+					decor.EwmaETA(decor.ET_STYLE_GO, 10),
+					"✅",
+				),
+			),
 		)
+
 		p.bars[st.ID] = bar
-		p.initedTotal[st.ID] = true
 		p.last[st.ID] = 0
+		p.lastTime[st.ID] = time.Now()
 	}
 
-	// If total is not known (stream upload), skip, wait for total to be known before creating bar.
 	if bar == nil {
 		return nil
 	}
 
-	// Incremental update (important! progressbar needs delta)
 	prev := p.last[st.ID]
 	delta := st.Uploaded - prev
 	if delta > 0 {
-		_ = bar.Add64(delta)
+		now := time.Now()
+		iterDur := now.Sub(p.lastTime[st.ID])
+		// prevent 0, avoid ETA jitter
+		if iterDur <= 0 {
+			iterDur = time.Millisecond
+		}
+
+		bar.EwmaIncrBy(int(delta), iterDur)
+
 		p.last[st.ID] = st.Uploaded
+		p.lastTime[st.ID] = now
 	}
 
-	// Finish: clean up
-	if st.Total >= 0 && st.Uploaded >= st.Total {
-		bar.Finish()
-		fmt.Fprintln(os.Stderr)
+	if st.Total > 0 && st.Uploaded >= st.Total {
+		bar.SetTotal(st.Total, true)
 		delete(p.bars, st.ID)
 		delete(p.last, st.ID)
-		delete(p.initedTotal, st.ID)
+		delete(p.lastTime, st.ID)
 	}
+
 	return nil
+}
+
+func (p *UploadProgress) Shutdown() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, bar := range p.bars {
+		bar.Abort(true)
+	}
+	p.p.Wait()
 }

@@ -15,11 +15,12 @@ import (
 )
 
 type Client struct {
-	ctx      context.Context
-	cfg      *config.Config
-	client   *telegram.Client
-	flow     auth.Flow
-	uploader *uploader.Uploader
+	ctx            context.Context
+	cfg            *config.Config
+	client         *telegram.Client
+	flow           auth.Flow
+	uploader       *uploader.Uploader
+	uploadProgress *ui.UploadProgress
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -51,18 +52,24 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 		auth.SendCodeOptions{},
 	)
 
-	// Uploader
-	uploader := uploader.NewUploader(client.API()).
-		WithPartSize(512 * 1024).
-		WithProgress(ui.NewUploadProgress())
-
 	return &Client{
-		ctx:      ctx,
-		cfg:      cfg,
-		client:   client,
-		flow:     flow,
-		uploader: uploader,
+		ctx:    ctx,
+		cfg:    cfg,
+		client: client,
+		flow:   flow,
 	}, nil
+}
+
+func (c *Client) InitUploader() {
+	c.uploadProgress = ui.NewUploadProgress()
+	c.uploader = uploader.NewUploader(c.client.API()).
+		WithPartSize(512 * 1024).
+		WithProgress(c.uploadProgress)
+}
+
+func (c *Client) CloseUploader() {
+	c.uploadProgress.Shutdown()
+	c.uploader = nil
 }
 
 func (c *Client) ResolvePeer(chatID int64) (tg.InputPeerClass, error) {

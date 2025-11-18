@@ -7,7 +7,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
-	"tg-storage-assistant/internal/ffmpeg"
+	"sync"
 	"tg-storage-assistant/internal/logger"
 	"tg-storage-assistant/internal/util"
 
@@ -18,6 +18,8 @@ type MediaItem struct {
 	FilePath  string
 	MediaType string // "photo" or "video"
 	Caption   string
+	W         int
+	H         int
 }
 
 func (c *Client) SendMultiMedia(peer tg.InputPeerClass, items []MediaItem) error {
@@ -32,14 +34,32 @@ func (c *Client) SendMultiMedia(peer tg.InputPeerClass, items []MediaItem) error
 			util.SafeBase(item.FilePath), item.Caption)
 	}
 
-	album := []tg.InputSingleMedia{}
-	for _, item := range items {
-		media, err := c.uploadMedia(item)
-		if err != nil {
-			return err
-		}
-		album = append(album, *media)
+	c.InitUploader()
+	album := make([]tg.InputSingleMedia, len(items))
+
+	wg := sync.WaitGroup{}
+	errs := make(chan error, len(items))
+
+	for i, item := range items {
+		wg.Add(1)
+		go func(i int, item MediaItem) {
+			defer wg.Done()
+			media, err := c.uploadMedia(item)
+			if err != nil {
+				errs <- err
+				return
+			}
+			album[i] = *media
+		}(i, item)
 	}
+
+	wg.Wait()
+	c.CloseUploader()
+	close(errs)
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to upload media: %v", errs)
+	}
+	logger.Debug.Println("All media uploaded successfully")
 
 	_, err := c.client.API().MessagesSendMultiMedia(c.ctx, &tg.MessagesSendMultiMediaRequest{
 		Peer:       peer,
@@ -56,18 +76,13 @@ func (c *Client) uploadMedia(media MediaItem) (*tg.InputSingleMedia, error) {
 	if err != nil {
 		return nil, fmt.Errorf("upload %q: %w", media.FilePath, err)
 	}
-	logger.Debug.Println("uploaded media: ", inputFile)
 
 	switch media.MediaType {
 	case "photo":
 		photo := c.buildPhotoMedia(inputFile, media.Caption)
 		return &photo, nil
 	case "video":
-		width, height, err := ffmpeg.GetVideoResolution(media.FilePath)
-		if err != nil {
-			return nil, err
-		}
-		video := c.buildVideoMedia(inputFile, width, height, media.Caption)
+		video := c.buildVideoMedia(inputFile, media.W, media.H, media.Caption)
 		return &video, nil
 	}
 
