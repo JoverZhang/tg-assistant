@@ -11,7 +11,8 @@ import (
 )
 
 func SplitVideoByDuration(videoPath, outputPath string, beginDuration, maxSize int64) error {
-	cmd := exec.Command("ffmpeg",
+	cmd := exec.Command(
+		"ffmpeg",
 		"-i", videoPath,
 		"-ss", strconv.FormatInt(beginDuration, 10),
 		"-fs", strconv.FormatInt(maxSize, 10),
@@ -178,7 +179,8 @@ func ExtractFrames(videoPath, outputPath string, totalDuration float64, count in
 		framePath := filepath.Join(outputPath, fmt.Sprintf("frame_%03d.jpg", i))
 
 		// Extract frame at timestamp
-		cmd := exec.Command("ffmpeg",
+		cmd := exec.Command(
+			"ffmpeg",
 			"-ss", fmt.Sprintf("%.2f", timestamp),
 			"-i", videoPath,
 			"-vframes", "1",

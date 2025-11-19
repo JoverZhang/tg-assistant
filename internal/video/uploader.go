@@ -41,7 +41,19 @@ func ProcessVideo(
 	logger.Info.Printf("  DESCRIPTION: %s", description)
 	logger.Info.Printf("  SIZE: %s", util.FormatBytesToHumanReadable(fileInfo.Size()))
 
-	// Step 1: Generate preview thumbnail (5×6 grid, 30 frames)
+	// Step 1: Validate media format, convert to mp4 if needed
+	mp4Path, err := ffmpeg.EnsureMP4Compatible(filePath, tempDir)
+	if err != nil {
+		return fmt.Errorf("failed to ensure mp4 compatible: %w", err)
+	}
+	if mp4Path != filePath {
+		logger.Info.Printf("Ensure MP4 compatible: %s -> %s", filePath, mp4Path)
+		filePath = mp4Path
+	} else {
+		logger.Info.Printf("MP4 already compatible: %s", filePath)
+	}
+
+	// Step 2: Generate preview thumbnail (5×6 grid, 30 frames)
 	durTotal, err := ffmpeg.GetVideoDuration(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to get video duration: %w", err)
@@ -58,20 +70,20 @@ func ProcessVideo(
 		return fmt.Errorf("failed to compose grid: %w", err)
 	}
 
-	// Step 2: Split video if needed
+	// Step 3: Split video if needed
 	logger.Info.Printf("Splitting video into parts if needed...")
 	videoParts, err := splitVideo(filePath, maxSize, tempDir)
 	if err != nil {
 		return fmt.Errorf("failed to split video: %w", err)
 	}
 
-	// Step 3: Validate media group size
+	// Step 4: Validate media group size
 	if 1+len(videoParts) > 10 {
 		return fmt.Errorf("media group would have %d items (1 preview + %d video parts), exceeds Telegram limit of 10",
 			1+len(videoParts), len(videoParts))
 	}
 
-	// Step 4: Build media group
+	// Step 5: Build media group
 	baseCaption := fmt.Sprintf("#%s %s", tag, strings.ReplaceAll(description, "_", " "))
 	var mediaItems []MediaItem
 
