@@ -16,7 +16,7 @@ func main() {
 	ctx := context.Background()
 
 	// Parse configuration from command-line arguments
-	cfg, err := config.Parse()
+	cfg, err := config.ParseUploaderConfig()
 	if err != nil {
 		logger.Error.Fatal(err)
 	}

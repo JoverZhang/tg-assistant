@@ -7,8 +7,8 @@ import (
 	"tg-storage-assistant/internal/util"
 )
 
-// Config holds the application configuration
-type Config struct {
+// UploaderConfig holds the application configuration
+type UploaderConfig struct {
 	// MTProto credentials
 	SessionFile   string
 	APIID         int
@@ -27,9 +27,9 @@ type Config struct {
 	CleanupTempDir bool  // Cleanup temporary directory after processing
 }
 
-// Parse parses command-line flags and returns a Config
-func Parse() (*Config, error) {
-	cfg := &Config{}
+// ParseUploaderConfig parses command-line flags and returns a Config
+func ParseUploaderConfig() (*UploaderConfig, error) {
+	cfg := &UploaderConfig{}
 
 	var maxSizeStr string
 
@@ -69,7 +69,7 @@ func Parse() (*Config, error) {
 }
 
 // Validate checks if all required configuration fields are provided and valid
-func (c *Config) Validate() error {
+func (c *UploaderConfig) Validate() error {
 	// Check for MTProto credentials
 	if c.APIID == 0 {
 		return fmt.Errorf("api-id is required (get from https://my.telegram.org/apps)")

@@ -16,14 +16,14 @@ import (
 
 type Client struct {
 	ctx            context.Context
-	cfg            *config.Config
+	cfg            *config.UploaderConfig
 	client         *telegram.Client
 	flow           auth.Flow
 	uploader       *uploader.Uploader
 	uploadProgress *ui.UploadProgress
 }
 
-func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
+func NewClient(ctx context.Context, cfg *config.UploaderConfig) (*Client, error) {
 	// Telegram options
 	options := telegram.Options{}
 

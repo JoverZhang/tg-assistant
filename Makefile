@@ -25,9 +25,6 @@ init-test-uploader:
 	cp /tmp/big_medias/68MB.mov /tmp/test-uploader/local/test_68mb.mov
 	@echo "✓ Test files created"
 
-test-upload:
-	go test -v ./internal/telegram -run TestUpload
-
 run-test-uploader2:
 	@echo "Running test uploader2..."
 	go run ./cmd/uploader2 \
@@ -40,7 +37,7 @@ run-test-uploader2:
 		-storage-chat-id="$(CHAT_ID)" \
 		-proxy="$(PROXY_URL)" \
 		-max-size="20MB" \
-		-cleanup-temp-dir=false
+		-cleanup-temp-dir=true
 
 build-uploader2:
 	@echo "Building uploader2 binary..."
@@ -76,4 +73,13 @@ run-test-docker-image: build-docker-image
 		-storage-chat-id="$(CHAT_ID)" \
 		-proxy="$(PROXY_URL)" \
 		-max-size="20MB" \
-		-cleanup-temp-dir=false
+		-cleanup-temp-dir=true
+
+
+### Server
+
+run-test-server:
+	@echo "Running test server..."
+	go run ./cmd/server \
+		-token="$(TOKEN)" \
+		-proxy="$(PROXY_URL)"

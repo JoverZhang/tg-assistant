@@ -23,11 +23,24 @@ func ProcessVideo(
 	maxSize int64,
 	tempDir string, cleanupTempDir bool,
 ) error {
-	defer func() {
+	defer func() error {
 		if cleanupTempDir {
-			logger.Info.Printf("Cleaning up temporary directory: %s", tempDir)
-			os.RemoveAll(tempDir)
+			entries, err := os.ReadDir(tempDir)
+			if err != nil {
+				return err
+			}
+
+			for _, entry := range entries {
+				path := filepath.Join(tempDir, entry.Name())
+				err = os.RemoveAll(path)
+				if err != nil {
+					return err
+				}
+			}
+
+			logger.Info.Printf("Cleaned up temporary directory: %s (%d files)", tempDir, len(entries))
 		}
+		return nil
 	}()
 
 	logger.Info.Println("┏━━━━━━━━━━━━━━━ Processing video... ━━━━━━━━━━━━━━━┓")
@@ -135,7 +148,7 @@ func LogFileInfo(filename string, size int64, success bool, err error) {
 	}
 }
 
-func MoveVideoFiles(cfg *config.Config, originalFilename string) error {
+func MoveVideoFiles(cfg *config.UploaderConfig, originalFilename string) error {
 	sourcePath := filepath.Join(cfg.LocalDir, originalFilename)
 	ext := filepath.Ext(originalFilename)
 	nameWithoutExt := strings.TrimSuffix(originalFilename, ext)
