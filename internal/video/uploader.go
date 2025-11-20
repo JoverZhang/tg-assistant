@@ -21,7 +21,8 @@ func ProcessVideo(
 	peer tg.InputPeerClass,
 	filePath, tag, description string,
 	maxSize int64,
-	tempDir string, cleanupTempDir bool,
+	tempDir string,
+	cleanupTempDir bool,
 ) error {
 	defer func() error {
 		if cleanupTempDir {
