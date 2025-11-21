@@ -25,30 +25,21 @@ init-test-uploader:
 	cp /tmp/big_medias/68MB.mov /tmp/test-uploader/local/test_68mb.mov
 	@echo "✓ Test files created"
 
-run-test-uploader2:
-	@echo "Running test uploader2..."
-	go run ./cmd/uploader2 \
-		-api-id="$(API_ID)" \
-		-api-hash="$(API_HASH)" \
-		-phone="$(PHONE)" \
-		-local-dir="/tmp/test-uploader/local" \
-		-temp-dir="/tmp/test-uploader/temp" \
-		-done-dir="/tmp/test-uploader/done" \
-		-storage-chat-id="$(CHAT_ID)" \
-		-proxy="$(PROXY_URL)" \
-		-max-size="20MB" \
-		-cleanup-temp-dir=true
+run-test-uploader:
+	@echo "Running test uploader..."
+	go run ./cmd/uploader \
+		-config="config.yaml"
 
-build-uploader2:
-	@echo "Building uploader2 binary..."
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./bin/uploader2 ./cmd/uploader2
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ./bin/uploader2.exe ./cmd/uploader2
+build-uploader:
+	@echo "Building uploader binary..."
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./bin/uploader ./cmd/uploader
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ./bin/uploader.exe ./cmd/uploader
 
-build-uploader2-and-upload: build-uploader2
-	@echo "Building uploader2 and uploading files..."
-	mcli cp ./bin/uploader2 ./bin/uploader2.exe singapore/test-tg-assistant
+build-uploader-and-upload: build-uploader
+	@echo "Building uploader and uploading files..."
+	mcli cp ./bin/uploader ./bin/uploader.exe singapore/test-tg-assistant
 
-build-docker-image: build-uploader2
+build-docker-image: build-uploader
 	@echo "Building docker image..."
 	docker build \
 		--build-arg APT_PROXY="$(PROXY_URL)" \
@@ -83,3 +74,4 @@ run-test-server:
 	go run ./cmd/server \
 		-token="$(TOKEN)" \
 		-proxy="$(PROXY_URL)"
+

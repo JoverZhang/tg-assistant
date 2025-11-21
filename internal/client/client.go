@@ -19,14 +19,14 @@ import (
 
 type Client struct {
 	ctx            context.Context
-	cfg            *config.UploaderConfig
+	cfg            *config.MtprotoConfig
 	client         *telegram.Client
 	flow           auth.Flow
 	uploader       *uploader.Uploader
 	uploadProgress *ui.UploadProgress
 }
 
-func NewClient(ctx context.Context, cfg *config.UploaderConfig) (*Client, error) {
+func NewClient(ctx context.Context, cfg *config.MtprotoConfig) (*Client, error) {
 	// Telegram options
 	options := telegram.Options{}
 
@@ -36,8 +36,8 @@ func NewClient(ctx context.Context, cfg *config.UploaderConfig) (*Client, error)
 	}
 
 	// Network settings
-	if cfg.ProxyURL != "" {
-		dial, err := dialer.CreateProxyDialerFromURL(cfg.ProxyURL)
+	if cfg.Proxy != "" {
+		dial, err := dialer.CreateProxyDialerFromURL(cfg.Proxy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create proxy dialer: %w", err)
 		}

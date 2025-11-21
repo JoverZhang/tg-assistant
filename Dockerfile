@@ -20,8 +20,8 @@ RUN set -eux; \
 
 WORKDIR /app
 
-COPY ./bin/uploader2 /usr/local/bin/uploader2
+COPY ./bin/uploader /usr/local/bin/uploader
 
-RUN chmod +x /usr/local/bin/uploader2
+RUN chmod +x /usr/local/bin/uploader
 
-ENTRYPOINT ["/usr/local/bin/uploader2"]
+ENTRYPOINT ["/usr/local/bin/uploader"]

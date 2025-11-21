@@ -149,7 +149,7 @@ func LogFileInfo(filename string, size int64, success bool, err error) {
 	}
 }
 
-func MoveVideoFiles(cfg *config.UploaderConfig, originalFilename string) error {
+func MoveVideoFiles(cfg *config.MtprotoConfig, originalFilename string) error {
 	sourcePath := filepath.Join(cfg.LocalDir, originalFilename)
 	ext := filepath.Ext(originalFilename)
 	nameWithoutExt := strings.TrimSuffix(originalFilename, ext)

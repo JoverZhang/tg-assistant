@@ -16,10 +16,11 @@ func main() {
 	ctx := context.Background()
 
 	// Parse configuration from command-line arguments
-	cfg, err := config.ParseUploaderConfig()
+	allConfig, err := config.ParseConfig()
 	if err != nil {
 		logger.Error.Fatal(err)
 	}
+	cfg := allConfig.Mtproto
 
 	// Check if ffmpeg and ffprobe are available (required for video processing)
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
@@ -30,7 +31,7 @@ func main() {
 	}
 
 	// Create client
-	client, err := client.NewClient(ctx, cfg)
+	client, err := client.NewClient(ctx, &cfg)
 	if err != nil {
 		logger.Error.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func main() {
 
 			// Process video
 			logger.Info.Printf("Processing video: %s", filename)
-			err = video.ProcessVideo(client, peer, filePath, tag, description, cfg.MaxSize, cfg.TempDir, cfg.CleanupTempDir)
+			err = video.ProcessVideo(client, peer, filePath, tag, description, cfg.MaxSizeBytes, cfg.TempDir, cfg.CleanupTempDir)
 			if err != nil {
 				video.LogFileInfo(filename, fileInfo.Size(), false, err)
 				stats.Failed++
@@ -95,7 +96,7 @@ func main() {
 			}
 
 			// Move video file to done directory
-			if err := video.MoveVideoFiles(cfg, filename); err != nil {
+			if err := video.MoveVideoFiles(&cfg, filename); err != nil {
 				logger.Warn.Printf("Uploaded %s but failed to move file - %v", filename, err)
 				stats.Failed++
 				continue

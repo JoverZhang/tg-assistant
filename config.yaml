@@ -1,0 +1,21 @@
+mtproto:
+  session_file: ./session.json
+
+  api_id: ${API_ID}
+  api_hash: ${API_HASH}
+  phone: ${PHONE}
+  storage_chat_id: ${CHAT_ID}
+
+  local_dir: /tmp/test-uploader/local
+  temp_dir: /tmp/test-uploader/temp
+  done_dir: /tmp/test-uploader/done
+
+  max_size: 20MB
+  cleanup_temp_dir: true
+
+  proxy: ${PROXY_URL}
+
+bot:
+  token: ${TOKEN}
+
+  proxy: ${PROXY_URL}
