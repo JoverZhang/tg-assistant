@@ -3,6 +3,7 @@ module tg-storage-assistant
 go 1.25.1
 
 require (
+	github.com/alecthomas/kong v1.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/vbauerster/mpb/v8 v8.11.2
 	go.yaml.in/yaml/v3 v3.0.4
